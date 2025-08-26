@@ -1,159 +1,154 @@
-## 🤖 ربات فروش و مدیریت سرویس
+WINGSBOT_FREE – راهنمای نصب و مدیریت ربات فروش
 
-این ربات برای مدیریت فروش و سرویس‌ها طراحی شده است. سعی شده مراحل نصب و راه‌اندازی ساده و شفاف توضیح داده شود تا هر کسی بتواند بدون پیچیدگی از آن استفاده کند.
+این پروژه یک ربات تلگرامی برای مدیریت فروش سرویس‌های اینترنتی و اشتراک‌هاست.
+با نصب این ربات روی سرور لینوکسی (Ubuntu) می‌توانید به‌صورت خودکار فرآیند فروش، پرداخت، مدیریت کاربر و پشتیبانی را انجام دهید.
 
----
+✨ امکانات ربات
 
-### ✨ امکانات
+پشتیبانی از پنل‌های مرزبان، مرزنشین، x_ui, 3x_ui, tx_ui و علیرضا
 
-- پشتیبانی از پنل‌های مرزبان / مرزنشین / x_ui / 3x_ui / tx_ui / علیرضا
-- خرید پلن، تخفیف، پرداخت (درگاه / کارت / کریپتو)
-- ارسال رسید برای تایید ادمین
-- تمدید سرویس + دریافت لینک ساب
-- کیف‌پول کاربر (شارژ و مدیریت تراکنش‌ها)
-- تیکت پشتیبانی + آموزش‌ها + معرفی دوستان
-- پنل ادمین کامل
+فرآیند کامل خرید پلن، تخفیف و پرداخت:
 
+درگاه بانکی
 
+کارت به کارت
 
+کریپتو
 
-### 🚀 نصب روی سرور (Polling + اجرای دائمی)
-قبل هر کاری پیشنیاز هارو نصب کنید 
+ارسال رسید و تایید توسط ادمین
+
+تمدید سرویس و دریافت آنی لینک سابسکریپشن
+
+کیف پول داخلی (شارژ و مشاهده تراکنش‌ها)
+
+سیستم تیکت و پشتیبانی
+
+بخش آموزش‌ها و معرفی به دوستان
+
+پنل مدیریت کامل برای ادمین
+
+📋 پیش‌نیازها
+
+سیستم عامل: Ubuntu 20.04 یا Ubuntu 22.04
+
+دسترسی: کاربر root یا کاربری با دسترسی sudo
+
+توکن ربات تلگرام: از ربات @BotFather
+
+شناسه عددی ادمین: از ربات @userinfobot
+
+🚀 مراحل نصب
+۱. بروزرسانی سرور و نصب پیش‌نیازها
 ```bash
-sudo apt update
-sudo apt install python3 python3-venv python3-pip -y
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-venv python3-pip git -y
 ```
-
-- ۱) دریافت سورس و نصب وابستگی‌ها
-
+۲. دریافت سورس ربات
 ```bash
 git clone https://github.com/wings-iran/WINGSBOT_FREE.git
 cd WINGSBOT_FREE
 ```
+
+۳. ساخت محیط مجازی و نصب وابستگی‌ها
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
-### ⚙️ تنظیم متغیرها
 
-برای اجرای صحیح ربات باید اطلاعات اصلی در قالب متغیرها مشخص شوند. دو روش برای این کار وجود دارد:
 
- تغییر مستقیم در فایل تنظیمات
-فایل sellerbot.env بسازید 
+وقتی محیط مجازی فعال است، در ابتدای خط فرمان (.venv) دیده می‌شود.
+
+۴. تنظیم متغیرهای محیطی (ENV)
+
+یک فایل به نام sellerbot.env ایجاد کنید:
 ```bash
-sudo nano /opt/sellerbot/sellerbot.env
+nano sellerbot.env
 ```
-این متغییر هارو وارد کنید 
-BOT_TOKEN = "xxxx:yyyy"
-ADMIN_ID = 123456789
-CHANNEL_USERNAME = "@your_channel"
-CHANNEL_ID = -1001234567890
-DB_NAME = "bot.db" 
-سپس سیو کن ctrl+x+y
 
-به پوشه `bot/` بروید و فایل `config.py` را باز کنید:
 
+محتوا:
 ```bash
-cd bot
-nano config.py
+
+BOT_TOKEN=123456:ABC-DEF1234567890
+ADMIN_ID=1122334455
+CHANNEL_USERNAME=@YourChannel
+CHANNEL_ID=-1001234567890
+DB_NAME=bot.db
 ```
 
-مقادیر زیر را مطابق نیاز تغییر دهید:
 
-```python
-BOT_TOKEN = "xxxx:yyyy"
-ADMIN_ID = 123456789
-CHANNEL_USERNAME = "@your_channel"
-CHANNEL_ID = -1001234567890
-DB_NAME = "bot.db"
+ذخیره: Ctrl + X → Y → Enter
+
+۵. انتقال پروژه به مسیر استاندارد
+```bash
+deactivate
+cd ..
+sudo mv WINGSBOT_FREE /opt/sellerbot
 ```
-- ۲) ایجاد سرویس systemd
 
-فایل سرویس را ایجاد کنید:
-
+۶. ساخت سرویس systemd
 ```bash
 sudo nano /etc/systemd/system/sellerbot.service
 ```
 
-محتوا را قرار دهید:
 
-```ini
+محتوا:
+```bash
 [Unit]
-Description=Seller Bot
+Description=Seller Bot Service (WINGSBOT_FREE)
 After=network.target
 
 [Service]
+User=root
 WorkingDirectory=/opt/sellerbot
 EnvironmentFile=/opt/sellerbot/sellerbot.env
-ExecStart=/usr/bin/python3 /opt/sellerbot/main.py
+ExecStart=/opt/sellerbot/.venv/bin/python3 /opt/sellerbot/main.py
 Restart=always
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-- ۳) فعال‌سازی و اجرا
 
+ذخیره و خروج.
+
+۷. فعال‌سازی و اجرای ربات
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable sellerbot
-sudo systemctl start sellerbot
+sudo systemctl enable sellerbot.service
+sudo systemctl start sellerbot.service
 ```
 
-- ۴) بررسی وضعیت سرویس
-
+✅ بررسی وضعیت
 ```bash
-sudo systemctl status sellerbot
+sudo systemctl status sellerbot.service
 ```
 
-سپس وارد ربات در تلگرام شوید و این کامند را ارسال کنید:
+باید حالت active (running) نمایش داده شود.
+اکنون در تلگرام دستور /admin را به ربات بفرستید.
 
+🛠 عیب‌یابی
+
+برای دیدن لاگ‌های زنده:
 ```bash
-/admin
+sudo journalctl -u sellerbot.service -f --no-pager
 ```
 
-تا این مرحله، نصب روی سرور به پایان رسیده است ✅
+مقادیر داخل sellerbot.env باید بدون فاصله یا علامت " باشند.
 
----
+مطمئن شوید همه مراحل را درست اجرا کرده‌اید.
 
-### 🌐 نصب روی هاست (Webhook)
-
-در هاست‌های اشتراکی یا مواردی که دسترسی کامل به سیستم ندارید، باید از وبهوک استفاده کنید.
-
-- ۱) اضافه کردن متغیرهای وبهوک
-
-در فایل `sellerbot.env`:
-
+🗑 حذف کامل ربات
+# توقف و غیرفعال‌سازی سرویس
 ```bash
-USE_WEBHOOK=1
-WEBHOOK_URL=https://example.com/bot
-WEBHOOK_PATH=hook
-WEBHOOK_PORT=8080
-WEBHOOK_LISTEN=0.0.0.0
-WEBHOOK_SECRET=some-strong-secret
+sudo systemctl stop sellerbot.service
+sudo systemctl disable sellerbot.service
 ```
+# حذف فایل سرویس
+sudo rm /etc/systemd/system/sellerbot.service
+sudo systemctl daemon-reload
 
-- ۲) اجرای برنامه با وبهوک
-
-```bash
-USE_WEBHOOK=1 WEBHOOK_URL=https://example.com/bot WEBHOOK_PATH=hook \
-WEBHOOK_PORT=8080 BOT_TOKEN=xxx ADMIN_ID=123 CHANNEL_USERNAME=@ch CHANNEL_ID=-100... \
-python3 main.py
-```
-
-- ۳) تنظیم Nginx یا Apache (در صورت نیاز)
-
-نمونه پیکربندی برای Nginx:
-
-```nginx
-location /bot/ {
-    proxy_pass http://127.0.0.1:8080/;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Host $host;
-}
-```
-
-📌 در صورتی که وبهوک معتبر نباشد، ربات به صورت خودکار روی Polling برمی‌گردد تا از کار نیفتد.
+# حذف پروژه
+sudo rm -rf /opt/sellerbot
