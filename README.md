@@ -14,15 +14,28 @@
 - تیکت پشتیبانی + آموزش‌ها + معرفی دوستان
 - پنل ادمین کامل
 
-راهنمای نصب
 
+
+
+### 🚀 نصب روی سرور (Polling + اجرای دائمی)
+
+- ۱) دریافت سورس و نصب وابستگی‌ها
+
+```bash
+git clone https://github.com/wings-iran/WINGSBOT_FREE.git
+cd WINGSBOT_FREE
+```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 ### ⚙️ تنظیم متغیرها
 
 برای اجرای صحیح ربات باید اطلاعات اصلی در قالب متغیرها مشخص شوند. دو روش برای این کار وجود دارد:
 
  تغییر مستقیم در فایل تنظیمات
-ابتدا وارد فایل پروژه شوید
-cd WINGSBOT_FREE
+
 به پوشه `bot/` بروید و فایل `config.py` را باز کنید:
 
 ```bash
@@ -39,24 +52,6 @@ CHANNEL_USERNAME = "@your_channel"
 CHANNEL_ID = -1001234567890
 DB_NAME = "bot.db"
 ```
-
-
-
----
-
-### 🚀 نصب روی سرور (Polling + اجرای دائمی)
-
-- ۱) دریافت سورس و نصب وابستگی‌ها
-
-```bash
-git clone https://github.com/wings-iran/WINGSBOT_FREE.git
-cd WINGSBOT_FREE
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
 - ۲) ایجاد سرویس systemd
 
 فایل سرویس را ایجاد کنید:
