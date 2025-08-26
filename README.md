@@ -42,7 +42,7 @@ pip install -r requirements.txt
  تغییر مستقیم در فایل تنظیمات
 فایل sellerbot.env بسازید 
 ```bash
-nano sellerbot.env
+sudo nano /opt/sellerbot/sellerbot.env
 ```
 این متغییر هارو وارد کنید 
 BOT_TOKEN = "xxxx:yyyy"
