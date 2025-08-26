@@ -40,6 +40,17 @@ pip install -r requirements.txt
 برای اجرای صحیح ربات باید اطلاعات اصلی در قالب متغیرها مشخص شوند. دو روش برای این کار وجود دارد:
 
  تغییر مستقیم در فایل تنظیمات
+فایل sellerbot.env بسازید 
+```bash
+nano sellerbot.env
+```
+این متغییر هارو وارد کنید 
+BOT_TOKEN = "xxxx:yyyy"
+ADMIN_ID = 123456789
+CHANNEL_USERNAME = "@your_channel"
+CHANNEL_ID = -1001234567890
+DB_NAME = "bot.db" 
+سپس سیو کن ctrl+x+y
 
 به پوشه `bot/` بروید و فایل `config.py` را باز کنید:
 
