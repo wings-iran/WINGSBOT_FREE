@@ -94,8 +94,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if update.callback_query:
             await update.callback_query.answer()
             await update.callback_query.message.reply_text(notice)
+            await update.callback_query.message.reply_text("ادمین عزیز برای دریافت اطلاعیه ها و اپدیت ها حتما داخل کانال عضو شید\n@wingsbotcr")
         elif update.message:
             await update.message.reply_text(notice)
+            await update.message.reply_text("ادمین عزیز برای دریافت اطلاعیه ها و اپدیت ها حتما داخل کانال عضو شید\n@wingsbotcr")
     except Exception:
         pass
     return await send_admin_panel(update, context)

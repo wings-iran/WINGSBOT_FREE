@@ -564,11 +564,15 @@ def build_application() -> Application:
 
 
 def run():
-    # Proactively clear webhook before building app to avoid event-loop race
+    # Toggle between polling (server) and webhook (shared host) via env
     token = os.getenv('BOT_TOKEN') or ''
     if not token:
         from .config import BOT_TOKEN as _TB
         token = _TB
+
+    use_webhook = (os.getenv('USE_WEBHOOK') or '').lower() in ('1', 'true', 'yes')
+
+    # Proactively clear old webhook to avoid event-loop race and drop stale updates
     try:
         requests.post(
             f'https://api.telegram.org/bot{token}/deleteWebhook',
@@ -577,15 +581,49 @@ def run():
         )
     except Exception:
         pass
+
     app = build_application()
+
+    if not use_webhook:
+        # Long polling mode (recommended for VPS/server)
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(app.bot.delete_webhook(drop_pending_updates=True))
+            else:
+                loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
+        except Exception:
+            pass
+        app.run_polling(drop_pending_updates=True)
+        return
+
+    # Webhook mode (for shared hosting with HTTPS domain + open HTTP port)
+    listen_addr = os.getenv('WEBHOOK_LISTEN', '0.0.0.0')
+    listen_port = int(os.getenv('WEBHOOK_PORT', '8080'))
+    url_path = os.getenv('WEBHOOK_PATH', token)
+    base_url = (os.getenv('WEBHOOK_URL') or '').strip()
+    secret_token = os.getenv('WEBHOOK_SECRET')
+
+    # If WEBHOOK_URL not set or invalid, fallback to polling to keep bot usable
+    if not (base_url.startswith('http://') or base_url.startswith('https://')):
+        app.run_polling(drop_pending_updates=True)
+        return
+
+    # Drop any pending updates before switching to webhook
     try:
-        # Ensure no webhook is set and drop old updates to avoid conflicts
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # Rare case; schedule and wait
             loop.create_task(app.bot.delete_webhook(drop_pending_updates=True))
         else:
             loop.run_until_complete(app.bot.delete_webhook(drop_pending_updates=True))
     except Exception:
         pass
-    app.run_polling(drop_pending_updates=True)
+
+    webhook_url = f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
+    app.run_webhook(
+        listen=listen_addr,
+        port=listen_port,
+        url_path=url_path,
+        webhook_url=webhook_url,
+        secret_token=secret_token,
+    )
