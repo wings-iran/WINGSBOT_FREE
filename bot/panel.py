@@ -1222,8 +1222,12 @@ class MarzneshinAPI(BasePanelAPI):
         last_err = None
         for base in bases:
             json_candidates = [
-                {"url": f"{base}/api/admin/token", "json": {"username": self.username, "password": self.password}},
+                # Per your server docs: /api/token first
                 {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
+                # Some deployments require grant_type in JSON
+                {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password, "grant_type": "password"}},
+                # Alternative known paths
+                {"url": f"{base}/api/admin/token", "json": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/login", "json": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/auth/login", "json": {"username": self.username, "password": self.password}},
                 # OAuth-like common path
