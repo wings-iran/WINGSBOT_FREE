@@ -1217,6 +1217,19 @@ class MarzneshinAPI(BasePanelAPI):
             root = bu[:-4]
             if root and root not in bases:
                 bases.append(root)
+        else:
+            # Also try with '/app' appended
+            app_base = f"{bu}/app"
+            if app_base not in bases:
+                bases.append(app_base)
+            try:
+                # origin + /app
+                if 'origin' in locals():
+                    app_origin = f"{origin}/app"
+                    if app_origin not in bases:
+                        bases.append(app_origin)
+            except Exception:
+                pass
 
         # Try JSON login on /api/admin/token first (per docs), then other variants
         last_err = None
