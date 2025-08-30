@@ -1537,6 +1537,30 @@ class MarzneshinAPI(BasePanelAPI):
                     return None, "به‌روزرسانی کلاینت ناموفق بود"
         return None, "کلاینت برای تمدید یافت نشد"
 
+    async def create_user(self, user_id, plan):
+        inbounds, msg = self.list_inbounds()
+        if not inbounds:
+            return None, None, (msg or "اینباندی یافت نشد")
+        # Prefer common protocols
+        preferred = ["vless", "vmess", "trojan"]
+        chosen = None
+        # Normalize protocols
+        for name in preferred:
+            for ib in inbounds:
+                proto = (ib.get('protocol') or ib.get('type') or '').lower()
+                if proto == name:
+                    chosen = ib
+                    break
+            if chosen:
+                break
+        if not chosen:
+            chosen = inbounds[0]
+        inbound_id = chosen.get('id')
+        username, sub_link, status = self.create_user_on_inbound(inbound_id, user_id, plan)
+        if not username or not sub_link:
+            return None, None, status or "ساخت کاربر ناموفق بود"
+        return username, sub_link, "Success"
+
 
 def VpnPanelAPI(panel_id: int) -> BasePanelAPI:
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
