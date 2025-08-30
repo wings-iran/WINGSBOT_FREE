@@ -1644,15 +1644,8 @@ class MarzneshinAPI(BasePanelAPI):
             tgb = float(plan['traffic_gb'])
         except Exception:
             tgb = 0.0
-        if tgb <= 0:
-            data_limit = None
-        else:
-            if tgb >= 1 and abs(tgb - round(tgb)) < 1e-6:
-                data_limit = f"{int(round(tgb))}GB"
-            elif tgb >= 1:
-                data_limit = f"{tgb}GB"
-            else:
-                data_limit = f"{int(round(tgb * 1024))}MB"
+        # Marzneshin expects integer for data_limit; use bytes
+        data_limit = int(tgb * (1024 ** 3)) if tgb > 0 else None
         try:
             days = int(plan['duration_days'])
         except Exception:
@@ -1672,8 +1665,8 @@ class MarzneshinAPI(BasePanelAPI):
         }
         if service_ids:
             payload["service_ids"] = service_ids
-        if data_limit:
-            payload["data_limit"] = data_limit
+        if data_limit is not None:
+            payload["data_limit"] = int(data_limit)
         payload["expire_strategy"] = expire_strategy
         payload["expire_date"] = expire_date
         if usage_duration is not None:
