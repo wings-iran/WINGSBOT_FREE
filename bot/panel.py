@@ -1628,28 +1628,82 @@ class MarzneshinAPI(BasePanelAPI):
         return None, "کلاینت برای تمدید یافت نشد"
 
     async def create_user(self, user_id, plan):
-        inbounds, msg = self.list_inbounds()
-        if not inbounds:
-            return None, None, (msg or "اینباندی یافت نشد")
-        # Prefer common protocols
-        preferred = ["vless", "vmess", "trojan"]
-        chosen = None
-        # Normalize protocols
-        for name in preferred:
-            for ib in inbounds:
-                proto = (ib.get('protocol') or ib.get('type') or '').lower()
-                if proto == name:
-                    chosen = ib
-                    break
-            if chosen:
-                break
-        if not chosen:
-            chosen = inbounds[0]
-        inbound_id = chosen.get('id')
-        username, sub_link, status = self.create_user_on_inbound(inbound_id, user_id, plan)
-        if not username or not sub_link:
-            return None, None, status or "ساخت کاربر ناموفق بود"
-        return username, sub_link, "Success"
+        # Ensure token
+        if not self.token and not self._ensure_token():
+            detail = (self._last_token_error or "نامشخص")
+            return None, None, f"توکن دریافت نشد: {detail}"
+        # Build payload like sample bot
+        try:
+            settings = query_db("SELECT protocol, tag FROM panel_inbounds WHERE panel_id = ?", (self.panel_id,)) or []
+        except Exception:
+            settings = []
+        # service_ids from DB 'tag' field list
+        service_ids = [row['tag'] for row in settings if isinstance(row.get('tag'), str) and row['tag'].strip()]
+        # Map traffic/days
+        try:
+            tgb = float(plan['traffic_gb'])
+        except Exception:
+            tgb = 0.0
+        if tgb <= 0:
+            data_limit = None
+        else:
+            if tgb >= 1 and abs(tgb - round(tgb)) < 1e-6:
+                data_limit = f"{int(round(tgb))}GB"
+            elif tgb >= 1:
+                data_limit = f"{tgb}GB"
+            else:
+                data_limit = f"{int(round(tgb * 1024))}MB"
+        try:
+            days = int(plan['duration_days'])
+        except Exception:
+            days = 0
+        expire_date = None
+        expire_strategy = "never"
+        usage_duration = None
+        if days > 0:
+            # fixed date default
+            from datetime import datetime, timedelta
+            dt = (datetime.utcnow() + timedelta(days=days)).isoformat()
+            expire_date = dt
+            expire_strategy = "fixed_date"
+        new_username = f"user_{user_id}_{uuid.uuid4().hex[:6]}"
+        payload = {
+            "username": new_username,
+        }
+        if service_ids:
+            payload["service_ids"] = service_ids
+        if data_limit:
+            payload["data_limit"] = data_limit
+        payload["expire_strategy"] = expire_strategy
+        payload["expire_date"] = expire_date
+        if usage_duration is not None:
+            payload["usage_duration"] = usage_duration
+
+        try:
+            resp = self.session.post(f"{self.base_url}/api/users", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=payload, timeout=15)
+            if resp.status_code not in (200, 201):
+                return None, None, f"HTTP {resp.status_code} @ /api/users: {(resp.text or '')[:200]}"
+            # fetch configs for this user
+            sub_link = ''
+            try:
+                r2 = self.session.get(f"{self.base_url}/api/configs?username={new_username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+                if r2.status_code == 200:
+                    data = r2.json()
+                    items = data if isinstance(data, list) else (data.get('configs') if isinstance(data, dict) else [])
+                    links = []
+                    if isinstance(items, list):
+                        for it in items:
+                            if isinstance(it, dict):
+                                link = it.get('link') or it.get('url') or it.get('config')
+                                if isinstance(link, str) and link.strip():
+                                    links.append(link.strip())
+                    if links:
+                        sub_link = "\n".join(links)
+            except Exception:
+                pass
+            return new_username, (sub_link or None), "Success"
+        except requests.RequestException as e:
+            return None, None, str(e)
 
 
 def VpnPanelAPI(panel_id: int) -> BasePanelAPI:
