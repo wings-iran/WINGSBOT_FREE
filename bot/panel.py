@@ -1165,9 +1165,7 @@ class MarzneshinAPI(BasePanelAPI):
         if not self.token:
             return []
         return [
-            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': f"Bearer {self.token}"},
-            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Token': self.token},
-            {'Accept': 'application/json', 'Content-Type': 'application/json', 'token': self.token},
+            {'Accept': 'application/json', 'Authorization': f"Bearer {self.token}"},
         ]
 
     def _extract_token_from_obj(self, obj):
@@ -1231,81 +1229,31 @@ class MarzneshinAPI(BasePanelAPI):
             except Exception:
                 pass
 
-        # Try JSON login on /api/admin/token first (per docs), then other variants
+        # Only form-encoded OAuth2 Password on /api/admins/token
         last_err = None
         for base in bases:
-            json_candidates = [
-                # Per docs you provided: OAuth2 password on /api/admins/token
-                {"url": f"{base}/api/admins/token", "json": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/api/admins/token/", "json": {"username": self.username, "password": self.password}},
-                # Backwards-compat: /api/token
-                {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/api/token/", "json": {"username": self.username, "password": self.password}},
-                # With /app prefix variants
-                {"url": f"{base}/app/api/admins/token", "json": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/app/api/admins/token/", "json": {"username": self.username, "password": self.password}},
-            ]
-            for c in json_candidates:
+            for path in ("/api/admins/token", "/api/admins/token/"):
+                url = f"{base}{path}"
                 try:
-                    resp = self.session.post(c["url"], json=c["json"], headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
+                    resp = self.session.post(url, data={"username": self.username, "password": self.password, "grant_type": "password"}, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
                     if resp.status_code not in (200, 201):
-                        last_err = f"HTTP {resp.status_code} @ {c['url']}"
+                        last_err = f"HTTP {resp.status_code} @ {url}"
                         continue
                     try:
                         data = resp.json()
                     except ValueError:
-                        last_err = f"non-JSON @ {c['url']}"
+                        last_err = f"non-JSON @ {url}"
                         continue
-                    token_val = None
-                    for key in ["access_token", "token"]:
-                        if isinstance(data, dict) and isinstance(data.get(key), str):
-                            token_val = data.get(key)
-                            break
-                    if not token_val:
-                        token_val = self._extract_token_from_obj(data)
-                    if token_val:
+                    token_val = data.get("access_token") or data.get("token")
+                    if isinstance(token_val, str) and token_val:
                         if token_val.lower().startswith("bearer "):
                             token_val = token_val[7:].strip()
                         self.token = token_val.strip()
                         self._last_token_error = None
                         return True
+                    last_err = f"no access_token in response @ {url}"
                 except requests.RequestException:
-                    last_err = f"request error @ {c['url']}"
-                    continue
-        # As a last resort, try form-encoded on the same bases
-        for base in bases:
-            form_candidates = [
-                {"url": f"{base}/api/admins/token", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
-                {"url": f"{base}/api/admins/token/", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
-                {"url": f"{base}/api/token", "data": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/api/token/", "data": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/app/api/admins/token", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
-                {"url": f"{base}/app/api/admins/token/", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
-            ]
-            for c in form_candidates:
-                try:
-                    resp = self.session.post(c["url"], data=c["data"], headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
-                    if resp.status_code not in (200, 201):
-                        last_err = f"HTTP {resp.status_code} @ {c['url']}"
-                        continue
-                    try:
-                        data = resp.json()
-                    except ValueError:
-                        last_err = f"non-JSON @ {c['url']}"
-                        continue
-                    token_val = None
-                    for key in ["access_token", "token"]:
-                        if isinstance(data, dict) and isinstance(data.get(key), str):
-                            token_val = data.get(key)
-                            break
-                    if token_val:
-                        if token_val.lower().startswith("bearer "):
-                            token_val = token_val[7:].strip()
-                        self.token = token_val.strip()
-                        self._last_token_error = None
-                        return True
-                except requests.RequestException:
-                    last_err = f"request error @ {c['url']}"
+                    last_err = f"request error @ {url}"
                     continue
         if last_err:
             self._last_token_error = last_err
