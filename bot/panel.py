@@ -1195,43 +1195,86 @@ class MarzneshinAPI(BasePanelAPI):
         # Try to obtain token using username/password via common API login endpoints
         if not (self.username and self.password):
             return False
-        candidates = [
-            # form-encoded similar to Marzban
-            {"url": f"{self.base_url}/api/admin/token", "method": "form", "data": {"username": self.username, "password": self.password}},
-            {"url": f"{self.base_url}/api/token", "method": "form", "data": {"username": self.username, "password": self.password}},
-            # JSON payload variants
-            {"url": f"{self.base_url}/api/token", "method": "json", "json": {"username": self.username, "password": self.password}},
-            {"url": f"{self.base_url}/api/login", "method": "json", "json": {"username": self.username, "password": self.password}},
-            {"url": f"{self.base_url}/api/auth/login", "method": "json", "json": {"username": self.username, "password": self.password}},
-        ]
-        for c in candidates:
-            try:
-                if c["method"] == "form":
-                    resp = self.session.post(c["url"], data=c.get("data", {}), headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
-                else:
-                    resp = self.session.post(c["url"], json=c.get("json", {}), headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
-                if resp.status_code not in (200, 201):
-                    continue
+        # Build base candidates: provided URL and origin (scheme://host:port)
+        bases = []
+        bu = self.base_url.rstrip('/')
+        bases.append(bu)
+        try:
+            parts = urlsplit(self.base_url)
+            host = parts.hostname or ''
+            if host:
+                port = ''
+                if parts.port and not ((parts.scheme == 'http' and parts.port == 80) or (parts.scheme == 'https' and parts.port == 443)):
+                    port = f":{parts.port}"
+                origin = f"{parts.scheme}://{host}{port}"
+                if origin not in bases:
+                    bases.append(origin)
+        except Exception:
+            pass
+        # Also add variant with '/app' stripped if present
+        if bu.endswith('/app'):
+            root = bu[:-4]
+            if root and root not in bases:
+                bases.append(root)
+
+        # Try JSON login on /api/admin/token first (per docs), then other variants
+        for base in bases:
+            json_candidates = [
+                {"url": f"{base}/api/admin/token", "json": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/login", "json": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/auth/login", "json": {"username": self.username, "password": self.password}},
+            ]
+            for c in json_candidates:
                 try:
-                    data = resp.json()
-                except ValueError:
+                    resp = self.session.post(c["url"], json=c["json"], headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
+                    if resp.status_code not in (200, 201):
+                        continue
+                    try:
+                        data = resp.json()
+                    except ValueError:
+                        continue
+                    token_val = None
+                    for key in ["access_token", "token"]:
+                        if isinstance(data, dict) and isinstance(data.get(key), str):
+                            token_val = data.get(key)
+                            break
+                    if not token_val:
+                        token_val = self._extract_token_from_obj(data)
+                    if token_val:
+                        if token_val.lower().startswith("bearer "):
+                            token_val = token_val[7:].strip()
+                        self.token = token_val.strip()
+                        return True
+                except requests.RequestException:
                     continue
-                token_val = None
-                # common fields
-                for key in ["access_token", "token"]:
-                    if isinstance(data, dict) and isinstance(data.get(key), str):
-                        token_val = data.get(key)
-                        break
-                if not token_val:
-                    token_val = self._extract_token_from_obj(data)
-                if token_val:
-                    # strip possible prefixes like "Bearer "
-                    if token_val.lower().startswith("bearer "):
-                        token_val = token_val[7:].strip()
-                    self.token = token_val.strip()
-                    return True
-            except requests.RequestException:
-                continue
+        # As a last resort, try form-encoded on the same bases
+        for base in bases:
+            form_candidates = [
+                {"url": f"{base}/api/admin/token", "data": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/token", "data": {"username": self.username, "password": self.password}},
+            ]
+            for c in form_candidates:
+                try:
+                    resp = self.session.post(c["url"], data=c["data"], headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
+                    if resp.status_code not in (200, 201):
+                        continue
+                    try:
+                        data = resp.json()
+                    except ValueError:
+                        continue
+                    token_val = None
+                    for key in ["access_token", "token"]:
+                        if isinstance(data, dict) and isinstance(data.get(key), str):
+                            token_val = data.get(key)
+                            break
+                    if token_val:
+                        if token_val.lower().startswith("bearer "):
+                            token_val = token_val[7:].strip()
+                        self.token = token_val.strip()
+                        return True
+                except requests.RequestException:
+                    continue
         return False
 
     def _find_first_list_of_dicts(self, obj):
