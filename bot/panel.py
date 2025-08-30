@@ -1160,6 +1160,18 @@ class MarzneshinAPI(BasePanelAPI):
         self.session = requests.Session()
         self._json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
         self._last_token_error = None
+        
+    def _log_json(self, title: str, data):
+        try:
+            import json as _json
+            text = _json.dumps(data, ensure_ascii=False)
+        except Exception:
+            text = str(data)
+        try:
+            from .config import logger as _lg
+            _lg.info(f"[Marzneshin] {title}: {text[:4000]}")
+        except Exception:
+            pass
 
     def _token_header_variants(self):
         if not self.token:
@@ -1646,6 +1658,7 @@ class MarzneshinAPI(BasePanelAPI):
                 if r.status_code != 200:
                     continue
                 data = r.json()
+                self._log_json(f"GET {url}", data)
                 items = data if isinstance(data, list) else (data.get('services') if isinstance(data, dict) else [])
                 if isinstance(items, list):
                     for it in items:
@@ -1665,6 +1678,7 @@ class MarzneshinAPI(BasePanelAPI):
                     if ri.status_code != 200:
                         continue
                     di = ri.json()
+                    self._log_json(f"GET {url}", di)
                     arr = di if isinstance(di, list) else (di.get('inbounds') if isinstance(di, dict) else [])
                     if isinstance(arr, list):
                         for it in arr:
@@ -1679,6 +1693,7 @@ class MarzneshinAPI(BasePanelAPI):
                     if rs.status_code in (200, 201):
                         try:
                             js = rs.json()
+                            self._log_json("POST /api/services response", js)
                             if isinstance(js, dict) and isinstance(js.get('id'), int):
                                 service_ids = [js['id']]
                         except Exception:
@@ -1700,6 +1715,7 @@ class MarzneshinAPI(BasePanelAPI):
                         if rs.status_code in (200, 201):
                             try:
                                 js = rs.json()
+                                self._log_json("POST /api/services response (DB fallback)", js)
                                 if isinstance(js, dict) and isinstance(js.get('id'), int):
                                     service_ids = [js['id']]
                             except Exception:
