@@ -1141,15 +1141,18 @@ class TxUiAPI(BasePanelAPI):
 
 
 class MarzneshinAPI(BasePanelAPI):
-    """Marzneshin support.
-    - If token is present: use {BASE}/app/apiv2 endpoints with Token header
-    - Else: fallback to cookie-based X-UI uppercase endpoints
+    """Marzneshin support via /api endpoints with Bearer token.
+    - Requires admin API token (Authorization: Bearer <TOKEN>)
+    - Endpoints used:
+        /api/users, /api/inbounds, /api/configs
+    - Fallback X-UI cookie login is disabled to avoid hitting /login on API-only deployments.
     """
 
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
         self.base_url = panel_row['url'].rstrip('/')
-        self.api_base = self.base_url if '/app' in self.base_url else f"{self.base_url}/app"
+        # Some deployments may serve under /app, but official docs use root /api
+        self.api_base = self.base_url
         self.username = panel_row.get('username')
         self.password = panel_row.get('password')
         self.token = (panel_row.get('token') or '').strip()
@@ -1161,8 +1164,8 @@ class MarzneshinAPI(BasePanelAPI):
         if not self.token:
             return []
         return [
-            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Token': self.token},
             {'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': f"Bearer {self.token}"},
+            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Token': self.token},
             {'Accept': 'application/json', 'Content-Type': 'application/json', 'token': self.token},
         ]
 
@@ -1185,14 +1188,13 @@ class MarzneshinAPI(BasePanelAPI):
         try:
             # Token-based API attempts (required for Marzneshin)
             if self.token:
-                endpoints = [
-                    f"{self.api_base}/apiv2/inbounds",
-                    f"{self.api_base}/apiv2/inbounds/list",
-                    f"{self.api_base}/apiv2/inbound",
-                    f"{self.base_url}/apiv2/inbounds",
-                    f"{self.base_url}/apiv2/inbounds/list",
-                    f"{self.base_url}/apiv2/inbound",
-                ]
+                bases = list({self.base_url, self.api_base})
+                endpoints = []
+                for b in bases:
+                    endpoints.extend([
+                        f"{b}/api/inbounds",
+                        f"{b}/api/inbounds/list",
+                    ])
                 last_err = None
                 for hdrs in self._token_header_variants():
                     for url in endpoints:
@@ -1252,70 +1254,80 @@ class MarzneshinAPI(BasePanelAPI):
                 "reset": 0
             }
             settings_obj = {"clients": [client_obj]}
-            # Token-based attempts
+            # Token-based attempts (Marzneshin official API does not add client per inbound; keep for compatibility if needed)
             if self.token:
-                endpoints = [
-                    f"{self.api_base}/apiv2/inbounds/addClient",
-                    f"{self.api_base}/apiv2/inbound/addClient",
-                    f"{self.base_url}/apiv2/inbounds/addClient",
-                ]
-                last_preview = None
+                # Prefer official user creation via /api/users
+                last_err = None
                 for hdrs in self._token_header_variants():
-                    for ep in endpoints:
-                        # 1) clients array payload
-                        payload1 = {"id": int(inbound_id), "clients": [client_obj]}
+                    try:
+                        # Create user first
+                        payload_user = {
+                            "username": f"user_{user_id}_{uuid.uuid4().hex[:6]}",
+                        }
+                        # Map plan to expire (days) and data_limit (e.g., 10GB/200MB)
                         try:
-                            r1 = self.session.post(ep, headers=hdrs, json=payload1, timeout=15)
-                        except requests.RequestException as e:
-                            last_preview = str(e)
-                            continue
-                        if r1.status_code in (200, 201):
-                            try:
-                                j1 = r1.json()
-                            except ValueError:
-                                j1 = {}
-                            if isinstance(j1, dict) and (j1.get('success') is True or str(j1.get('status','')).lower() in ('ok','success','200') or str(j1.get('code','')).startswith('2') or ('msg' in j1 and isinstance(j1['msg'], str) and 'success' in j1['msg'].lower())):
-                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-                                sub_link = f"{origin}/sub/{subid}"
-                                return f"user_{subid}", sub_link, "Success"
-                            last_preview = (r1.text or '')[:200]
-                        # 2) settings string
-                        payload2 = {"id": int(inbound_id), "settings": json.dumps(settings_obj)}
+                            days = int(plan['duration_days'])
+                        except Exception:
+                            days = 0
+                        if days > 0:
+                            payload_user["expire"] = days
                         try:
-                            r2 = self.session.post(ep, headers=hdrs, json=payload2, timeout=15)
-                        except requests.RequestException as e:
-                            last_preview = str(e)
+                            tgb = float(plan['traffic_gb'])
+                        except Exception:
+                            tgb = 0.0
+                        if tgb > 0:
+                            if tgb >= 1 and abs(tgb - round(tgb)) < 1e-6:
+                                payload_user["data_limit"] = f"{int(round(tgb))}GB"
+                            elif tgb >= 1:
+                                payload_user["data_limit"] = f"{tgb}GB"
+                            else:
+                                payload_user["data_limit"] = f"{int(round(tgb * 1024))}MB"
+                        resp_user = self.session.post(f"{self.base_url}/api/users", headers=hdrs, json=payload_user, timeout=15)
+                        if resp_user.status_code not in (200, 201):
+                            last_err = f"HTTP {resp_user.status_code} @ /api/users: {(resp_user.text or '')[:200]}"
                             continue
-                        if r2.status_code in (200, 201):
-                            try:
-                                j2 = r2.json()
-                            except ValueError:
-                                j2 = {}
-                            if isinstance(j2, dict) and (j2.get('success') is True or str(j2.get('status','')).lower() in ('ok','success','200') or str(j2.get('code','')).startswith('2') or ('msg' in j2 and isinstance(j2['msg'], str) and 'success' in j2['msg'].lower())):
-                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-                                sub_link = f"{origin}/sub/{subid}"
-                                return f"user_{subid}", sub_link, "Success"
-                            last_preview = (r2.text or '')[:200]
-                        # 3) form-urlencoded settings
-                        form_headers = dict(hdrs)
-                        form_headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
                         try:
-                            r3 = self.session.post(ep, headers=form_headers, data={'id': str(int(inbound_id)), 'settings': json.dumps(settings_obj)}, timeout=15)
-                        except requests.RequestException as e:
-                            last_preview = str(e)
-                            continue
-                        if r3.status_code in (200, 201):
+                            juser = resp_user.json()
+                        except ValueError:
+                            juser = {}
+                        created_username = juser.get('username') or payload_user["username"]
+                        # Try to fetch configs for this user to build link(s)
+                        sub_link = ''
+                        for cfg_url in [
+                            f"{self.base_url}/api/configs?username={created_username}",
+                            f"{self.base_url}/api/configs",
+                        ]:
                             try:
-                                j3 = r3.json()
-                            except ValueError:
-                                j3 = {}
-                            if isinstance(j3, dict) and (j3.get('success') is True or str(j3.get('status','')).lower() in ('ok','success','200') or str(j3.get('code','')).startswith('2') or ('msg' in j3 and isinstance(j3['msg'], str) and 'success' in j3['msg'].lower())):
-                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-                                sub_link = f"{origin}/sub/{subid}"
-                                return f"user_{subid}", sub_link, "Success"
-                            last_preview = (r3.text or '')[:200]
-                if last_preview:
-                    return None, None, f"API failure: {last_preview}"
+                                rc = self.session.get(cfg_url, headers=hdrs, timeout=12)
+                                if rc.status_code != 200:
+                                    continue
+                                data = rc.json()
+                            except Exception:
+                                continue
+                            items = data if isinstance(data, list) else (data.get('configs') if isinstance(data, dict) else [])
+                            if not isinstance(items, list):
+                                continue
+                            links = []
+                            for it in items:
+                                if not isinstance(it, dict):
+                                    continue
+                                owner = it.get('username') or it.get('user') or it.get('email')
+                                if owner and owner != created_username and 'username' in cfg_url:
+                                    # when filtered by username, accept all
+                                    pass
+                                elif owner and owner != created_username:
+                                    continue
+                                link = it.get('link') or it.get('url') or it.get('config')
+                                if isinstance(link, str) and link.strip():
+                                    links.append(link.strip())
+                            if links:
+                                sub_link = "\n".join(links)
+                                break
+                        return created_username, sub_link or None, "Success"
+                    except requests.RequestException as e:
+                        last_err = str(e)
+                        continue
+                return None, None, last_err or "API failure"
             # No token -> do not attempt cookie login for Marzneshin
             return None, None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
         except requests.RequestException as e:
