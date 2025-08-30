@@ -1341,38 +1341,49 @@ class MarzneshinAPI(BasePanelAPI):
                     endpoints.extend([
                         f"{b}/api/inbounds",
                         f"{b}/api/inbounds/list",
+                        f"{b}/app/api/inbounds",
+                        f"{b}/app/api/inbounds/list",
                     ])
                 last_err = None
-                for hdrs in self._token_header_variants():
-                    for url in endpoints:
-                        try:
-                            resp = self.session.get(url, headers=hdrs, timeout=12)
-                        except requests.RequestException as e:
-                            last_err = str(e)
-                            continue
-                        if resp.status_code != 200:
-                            last_err = f"HTTP {resp.status_code} @ {url}"
-                            continue
-                        try:
-                            data = resp.json()
-                        except ValueError:
-                            last_err = f"non-JSON @ {url}"
-                            continue
-                        items = self._find_first_list_of_dicts(data)
-                        if not isinstance(items, list):
-                            last_err = "لیست اینباند نامعتبر است"
-                            continue
-                        inbounds = []
-                        for it in items:
-                            if not isinstance(it, dict):
+                tried_refresh = False
+                header_sets = self._token_header_variants()
+                for url in endpoints:
+                    for candidate in [url, f"{url}?page=1&size=100"]:
+                        for hdrs in header_sets:
+                            try:
+                                resp = self.session.get(candidate, headers=hdrs, timeout=12)
+                            except requests.RequestException as e:
+                                last_err = str(e)
                                 continue
-                            inbounds.append({
-                                'id': it.get('id'),
-                                'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                                'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                                'port': it.get('port') or it.get('listen_port') or 0,
-                            })
-                        return inbounds, "Success"
+                            if resp.status_code == 401 and not tried_refresh:
+                                # try to refresh token once
+                                if self._ensure_token():
+                                    tried_refresh = True
+                                    header_sets = self._token_header_variants()
+                                    continue
+                            if resp.status_code != 200:
+                                last_err = f"HTTP {resp.status_code} @ {candidate}"
+                                continue
+                            try:
+                                data = resp.json()
+                            except ValueError:
+                                last_err = f"non-JSON @ {candidate}"
+                                continue
+                            items = self._find_first_list_of_dicts(data)
+                            if not isinstance(items, list):
+                                last_err = "لیست اینباند نامعتبر است"
+                                continue
+                            inbounds = []
+                            for it in items:
+                                if not isinstance(it, dict):
+                                    continue
+                                inbounds.append({
+                                    'id': it.get('id'),
+                                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                                    'port': it.get('port') or it.get('listen_port') or 0,
+                                })
+                            return inbounds, "Success"
                 if last_err:
                     logger.error(f"Marzneshin list_inbounds (token) error: {last_err}")
             # No token provided -> do not attempt cookie login for Marزنسhin
