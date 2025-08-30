@@ -1637,8 +1637,22 @@ class MarzneshinAPI(BasePanelAPI):
             settings = query_db("SELECT protocol, tag FROM panel_inbounds WHERE panel_id = ?", (self.panel_id,)) or []
         except Exception:
             settings = []
-        # service_ids from DB 'tag' field list
-        service_ids = [row['tag'] for row in settings if isinstance(row.get('tag'), str) and row['tag'].strip()]
+        # Collect service_ids: prefer live from API (/api/inbounds), fallback to DB tags
+        service_ids = []
+        # Try from API
+        try:
+            inb, _msg = self.list_inbounds()
+            if isinstance(inb, list) and inb:
+                for it in inb:
+                    if isinstance(it, dict):
+                        sid = it.get('id') or it.get('tag') or it.get('remark')
+                        if isinstance(sid, (int, str)) and str(sid).strip():
+                            service_ids.append(str(sid).strip())
+        except Exception:
+            pass
+        # Fallback to DB
+        if not service_ids and settings:
+            service_ids = [row['tag'].strip() for row in settings if isinstance(row.get('tag'), str) and row['tag'].strip()]
         # Map traffic/days
         try:
             tgb = float(plan['traffic_gb'])
