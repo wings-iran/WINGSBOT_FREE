@@ -1169,6 +1169,71 @@ class MarzneshinAPI(BasePanelAPI):
             {'Accept': 'application/json', 'Content-Type': 'application/json', 'token': self.token},
         ]
 
+    def _extract_token_from_obj(self, obj):
+        if isinstance(obj, dict):
+            # direct keys first
+            for k in ['access_token', 'token', 'bearer', 'Authorization']:
+                if k in obj and isinstance(obj[k], str) and len(obj[k]) >= 8:
+                    return obj[k]
+            # nested search
+            for v in obj.values():
+                t = self._extract_token_from_obj(v)
+                if t:
+                    return t
+        elif isinstance(obj, list):
+            for v in obj:
+                t = self._extract_token_from_obj(v)
+                if t:
+                    return t
+        elif isinstance(obj, str) and len(obj) >= 8:
+            return obj
+        return None
+
+    def _ensure_token(self) -> bool:
+        if self.token:
+            return True
+        # Try to obtain token using username/password via common API login endpoints
+        if not (self.username and self.password):
+            return False
+        candidates = [
+            # form-encoded similar to Marzban
+            {"url": f"{self.base_url}/api/admin/token", "method": "form", "data": {"username": self.username, "password": self.password}},
+            {"url": f"{self.base_url}/api/token", "method": "form", "data": {"username": self.username, "password": self.password}},
+            # JSON payload variants
+            {"url": f"{self.base_url}/api/token", "method": "json", "json": {"username": self.username, "password": self.password}},
+            {"url": f"{self.base_url}/api/login", "method": "json", "json": {"username": self.username, "password": self.password}},
+            {"url": f"{self.base_url}/api/auth/login", "method": "json", "json": {"username": self.username, "password": self.password}},
+        ]
+        for c in candidates:
+            try:
+                if c["method"] == "form":
+                    resp = self.session.post(c["url"], data=c.get("data", {}), headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
+                else:
+                    resp = self.session.post(c["url"], json=c.get("json", {}), headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
+                if resp.status_code not in (200, 201):
+                    continue
+                try:
+                    data = resp.json()
+                except ValueError:
+                    continue
+                token_val = None
+                # common fields
+                for key in ["access_token", "token"]:
+                    if isinstance(data, dict) and isinstance(data.get(key), str):
+                        token_val = data.get(key)
+                        break
+                if not token_val:
+                    token_val = self._extract_token_from_obj(data)
+                if token_val:
+                    # strip possible prefixes like "Bearer "
+                    if token_val.lower().startswith("bearer "):
+                        token_val = token_val[7:].strip()
+                    self.token = token_val.strip()
+                    return True
+            except requests.RequestException:
+                continue
+        return False
+
     def _find_first_list_of_dicts(self, obj):
         if isinstance(obj, list) and obj and isinstance(obj[0], dict):
             return obj
@@ -1187,6 +1252,8 @@ class MarzneshinAPI(BasePanelAPI):
     def list_inbounds(self):
         try:
             # Token-based API attempts (required for Marzneshin)
+            if not self.token and not self._ensure_token():
+                return None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
             if self.token:
                 bases = list({self.base_url, self.api_base})
                 endpoints = []
@@ -1228,7 +1295,7 @@ class MarzneshinAPI(BasePanelAPI):
                         return inbounds, "Success"
                 if last_err:
                     logger.error(f"Marzneshin list_inbounds (token) error: {last_err}")
-            # No token provided -> do not attempt cookie login for Marzneshin
+            # No token provided -> do not attempt cookie login for Marzنسhin
             return None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
         except requests.RequestException as e:
             logger.error(f"Marzneshin list_inbounds error: {e}")
@@ -1255,6 +1322,8 @@ class MarzneshinAPI(BasePanelAPI):
             }
             settings_obj = {"clients": [client_obj]}
             # Token-based attempts (Marzneshin official API does not add client per inbound; keep for compatibility if needed)
+            if not self.token and not self._ensure_token():
+                return None, None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
             if self.token:
                 # Prefer official user creation via /api/users
                 last_err = None
