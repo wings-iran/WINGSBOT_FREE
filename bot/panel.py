@@ -1235,10 +1235,15 @@ class MarzneshinAPI(BasePanelAPI):
         last_err = None
         for base in bases:
             json_candidates = [
-                # Per server docs: /api/token (JSON)
+                # Per docs you provided: OAuth2 password on /api/admins/token
+                {"url": f"{base}/api/admins/token", "json": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/admins/token/", "json": {"username": self.username, "password": self.password}},
+                # Backwards-compat: /api/token
                 {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
-                # Also try with trailing slash (some routers require it)
                 {"url": f"{base}/api/token/", "json": {"username": self.username, "password": self.password}},
+                # With /app prefix variants
+                {"url": f"{base}/app/api/admins/token", "json": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/app/api/admins/token/", "json": {"username": self.username, "password": self.password}},
             ]
             for c in json_candidates:
                 try:
@@ -1270,8 +1275,12 @@ class MarzneshinAPI(BasePanelAPI):
         # As a last resort, try form-encoded on the same bases
         for base in bases:
             form_candidates = [
+                {"url": f"{base}/api/admins/token", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
+                {"url": f"{base}/api/admins/token/", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
                 {"url": f"{base}/api/token", "data": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/token/", "data": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/app/api/admins/token", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
+                {"url": f"{base}/app/api/admins/token/", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
             ]
             for c in form_candidates:
                 try:
