@@ -1183,7 +1183,7 @@ class MarzneshinAPI(BasePanelAPI):
 
     def list_inbounds(self):
         try:
-            # Token-based API attempts
+            # Token-based API attempts (required for Marzneshin)
             if self.token:
                 endpoints = [
                     f"{self.api_base}/apiv2/inbounds",
@@ -1226,37 +1226,8 @@ class MarzneshinAPI(BasePanelAPI):
                         return inbounds, "Success"
                 if last_err:
                     logger.error(f"Marzneshin list_inbounds (token) error: {last_err}")
-            # Fallback to cookie-based X-UI
-            if not self.username or not self.password:
-                return None, "اطلاعات ورود پنل تنظیم نشده است"
-            login = self.session.post(f"{self.base_url}/login", json={"username": self.username, "password": self.password}, headers=self._json_headers, timeout=12)
-            login.raise_for_status()
-            xui_list_endpoints = [
-                f"{self.base_url}/xui/API/inbounds/",
-                f"{self.base_url}/xui/API/inbounds/list",
-                f"{self.base_url}/xui/api/inbounds",
-            ]
-            for url in xui_list_endpoints:
-                resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
-                if resp.status_code != 200:
-                    continue
-                try:
-                    data = resp.json()
-                except ValueError:
-                    continue
-                items = data.get('obj') if isinstance(data, dict) else data
-                if not isinstance(items, list):
-                    continue
-                inbounds = []
-                for it in items:
-                    inbounds.append({
-                        'id': it.get('id'),
-                        'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                        'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                        'port': it.get('port') or it.get('listen_port') or 0,
-                    })
-                return inbounds, "Success"
-            return None, "لیست اینباند در دسترس نیست"
+            # No token provided -> do not attempt cookie login for Marzneshin
+            return None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
         except requests.RequestException as e:
             logger.error(f"Marzneshin list_inbounds error: {e}")
             return None, str(e)
@@ -1345,19 +1316,8 @@ class MarzneshinAPI(BasePanelAPI):
                             last_preview = (r3.text or '')[:200]
                 if last_preview:
                     return None, None, f"API failure: {last_preview}"
-            # Fallback cookie-based X-UI
-            if not self.username or not self.password:
-                return None, None, "اطلاعات ورود پنل تنظیم نشده است"
-            login = self.session.post(f"{self.base_url}/login", json={"username": self.username, "password": self.password}, headers=self._json_headers, timeout=12)
-            login.raise_for_status()
-            ep = f"{self.base_url}/xui/API/inbounds/addClient"
-            payload = {"id": int(inbound_id), "settings": json.dumps(settings_obj)}
-            resp = self.session.post(ep, json=payload, headers={'Content-Type': 'application/json'}, timeout=15)
-            if resp.status_code not in (200, 201):
-                return None, None, f"HTTP {resp.status_code}: {(resp.text or '')[:200]}"
-            origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-            sub_link = f"{origin}/sub/{subid}?name={subid}"
-            return f"user_{subid}", sub_link, "Success"
+            # No token -> do not attempt cookie login for Marzneshin
+            return None, None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
         except requests.RequestException as e:
             logger.error(f"Marzneshin create_user_on_inbound error: {e}")
             return None, None, str(e)
