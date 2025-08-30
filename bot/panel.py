@@ -1676,24 +1676,52 @@ class MarzneshinAPI(BasePanelAPI):
             resp = self.session.post(f"{self.base_url}/api/users", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=payload, timeout=15)
             if resp.status_code not in (200, 201):
                 return None, None, f"HTTP {resp.status_code} @ /api/users: {(resp.text or '')[:200]}"
-            # fetch configs for this user
+            # Try to fetch user info for subscription URL first
             sub_link = ''
             try:
-                r2 = self.session.get(f"{self.base_url}/api/configs?username={new_username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
-                if r2.status_code == 200:
-                    data = r2.json()
-                    items = data if isinstance(data, list) else (data.get('configs') if isinstance(data, dict) else [])
-                    links = []
-                    if isinstance(items, list):
-                        for it in items:
-                            if isinstance(it, dict):
-                                link = it.get('link') or it.get('url') or it.get('config')
-                                if isinstance(link, str) and link.strip():
-                                    links.append(link.strip())
-                    if links:
-                        sub_link = "\n".join(links)
+                r_user = self.session.get(f"{self.base_url}/api/users/{new_username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+                if r_user.status_code == 200:
+                    u = r_user.json() if r_user.headers.get('content-type','').lower().startswith('application/json') else {}
+                    if isinstance(u, dict):
+                        s = u.get('subscription_url') or u.get('subscription') or ''
+                        if isinstance(s, str) and s.strip():
+                            if s.startswith('http'):
+                                sub_link = s.strip()
+                            else:
+                                sub_link = f"{self.base_url}{s.strip()}"
+                        # Sometimes configs array is present on user
+                        if not sub_link and isinstance(u.get('configs'), list):
+                            links = []
+                            for it in u.get('configs'):
+                                if isinstance(it, dict):
+                                    link = it.get('link') or it.get('url') or it.get('config')
+                                    if isinstance(link, str) and link.strip():
+                                        links.append(link.strip())
+                            if links:
+                                sub_link = "\n".join(links)
             except Exception:
                 pass
+            # Fallback: fetch configs endpoint filtered by username
+            if not sub_link:
+                try:
+                    r2 = self.session.get(f"{self.base_url}/api/configs?username={new_username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+                    if r2.status_code == 200:
+                        data = r2.json()
+                        items = data if isinstance(data, list) else (data.get('configs') if isinstance(data, dict) else [])
+                        links = []
+                        if isinstance(items, list):
+                            for it in items:
+                                if isinstance(it, dict):
+                                    owner = it.get('username') or it.get('user') or it.get('email')
+                                    if owner and owner != new_username:
+                                        continue
+                                    link = it.get('link') or it.get('url') or it.get('config')
+                                    if isinstance(link, str) and link.strip():
+                                        links.append(link.strip())
+                        if links:
+                            sub_link = "\n".join(links)
+                except Exception:
+                    pass
             return new_username, (sub_link or None), "Success"
         except requests.RequestException as e:
             return None, None, str(e)
