@@ -154,7 +154,7 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
     ptype = (panel_row.get('panel_type') or 'marzban').lower()
     api = VpnPanelAPI(panel_id=panel_id)
 
-    if ptype in ('xui', 'x-ui', 'sanaei', 'alireza', '3xui', '3x-ui', 'txui', 'tx-ui', 'sui', 's-ui'):
+    if ptype in ('xui', 'x-ui', 'sanaei', 'alireza', '3xui', '3x-ui', 'txui', 'tx-ui', 'sui', 's-ui', 'marzneshin'):
         # Step 1: show inbound list to admin
         inbounds, msg = api.list_inbounds() if hasattr(api, 'list_inbounds') else (None, 'Not supported')
         if not inbounds:
