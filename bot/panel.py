@@ -1743,6 +1743,14 @@ class MarzneshinAPI(BasePanelAPI):
             resp = self.session.post(f"{self.base_url}/api/users", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=payload, timeout=15)
             if resp.status_code not in (200, 201):
                 return None, None, f"HTTP {resp.status_code} @ /api/users: {(resp.text or '')[:200]}"
+            # Ensure services are attached to user by explicit PUT
+            if service_ids:
+                try:
+                    ru = self.session.put(f"{self.base_url}/api/users/{new_username}", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json={"service_ids": service_ids}, timeout=12)
+                    # ignore status; best-effort
+                    _ = ru.status_code
+                except Exception:
+                    pass
             # Try to fetch user info for subscription URL first
             sub_link = ''
             try:
