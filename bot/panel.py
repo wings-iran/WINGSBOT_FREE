@@ -1159,6 +1159,7 @@ class MarzneshinAPI(BasePanelAPI):
         self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
         self.session = requests.Session()
         self._json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+        self._last_token_error = None
 
     def _token_header_variants(self):
         if not self.token:
@@ -1250,6 +1251,7 @@ class MarzneshinAPI(BasePanelAPI):
                         if token_val.lower().startswith("bearer "):
                             token_val = token_val[7:].strip()
                         self.token = token_val.strip()
+                        self._last_token_error = None
                         return True
                 except requests.RequestException:
                     last_err = f"request error @ {c['url']}"
@@ -1281,11 +1283,13 @@ class MarzneshinAPI(BasePanelAPI):
                         if token_val.lower().startswith("bearer "):
                             token_val = token_val[7:].strip()
                         self.token = token_val.strip()
+                        self._last_token_error = None
                         return True
                 except requests.RequestException:
                     last_err = f"request error @ {c['url']}"
                     continue
         if last_err:
+            self._last_token_error = last_err
             from .config import logger
             logger.error(f"Marzneshin: failed to obtain token: {last_err}")
         return False
@@ -1309,7 +1313,8 @@ class MarzneshinAPI(BasePanelAPI):
         try:
             # Token-based API attempts (required for Marzneshin)
             if not self.token and not self._ensure_token():
-                return None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
+                detail = (self._last_token_error or "نامشخص")
+                return None, f"توکن دریافت نشد: {detail}"
             if self.token:
                 bases = list({self.base_url, self.api_base})
                 endpoints = []
@@ -1351,8 +1356,9 @@ class MarzneshinAPI(BasePanelAPI):
                         return inbounds, "Success"
                 if last_err:
                     logger.error(f"Marzneshin list_inbounds (token) error: {last_err}")
-            # No token provided -> do not attempt cookie login for Marzنسhin
-            return None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
+            # No token provided -> do not attempt cookie login for Marزنسhin
+            detail = (self._last_token_error or "نامشخص")
+            return None, f"توکن دریافت نشد: {detail}"
         except requests.RequestException as e:
             logger.error(f"Marzneshin list_inbounds error: {e}")
             return None, str(e)
@@ -1379,7 +1385,8 @@ class MarzneshinAPI(BasePanelAPI):
             settings_obj = {"clients": [client_obj]}
             # Token-based attempts (Marzneshin official API does not add client per inbound; keep for compatibility if needed)
             if not self.token and not self._ensure_token():
-                return None, None, "برای مرزنشین باید Token API تنظیم شود (apiv2)."
+                detail = (self._last_token_error or "نامشخص")
+                return None, None, f"توکن دریافت نشد: {detail}"
             if self.token:
                 # Prefer official user creation via /api/users
                 last_err = None
