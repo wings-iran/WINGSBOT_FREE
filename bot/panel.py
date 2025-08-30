@@ -1645,14 +1645,25 @@ class MarzneshinAPI(BasePanelAPI):
             if isinstance(inb, list) and inb:
                 for it in inb:
                     if isinstance(it, dict):
-                        sid = it.get('id') or it.get('tag') or it.get('remark')
-                        if isinstance(sid, (int, str)) and str(sid).strip():
-                            service_ids.append(str(sid).strip())
+                        sid = it.get('id')
+                        try:
+                            if sid is not None:
+                                service_ids.append(int(sid))
+                        except Exception:
+                            continue
         except Exception:
             pass
         # Fallback to DB
         if not service_ids and settings:
-            service_ids = [row['tag'].strip() for row in settings if isinstance(row.get('tag'), str) and row['tag'].strip()]
+            tmp = []
+            for row in settings:
+                tag = row.get('tag')
+                if isinstance(tag, str) and tag.strip():
+                    try:
+                        tmp.append(int(tag.strip()))
+                    except Exception:
+                        continue
+            service_ids = tmp
         # Map traffic/days
         try:
             tgb = float(plan['traffic_gb'])
