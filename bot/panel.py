@@ -1156,8 +1156,15 @@ class MarzneshinAPI(BasePanelAPI):
         self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
         self.session = requests.Session()
         self._json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-        if self.token:
-            self._json_headers['Token'] = self.token
+
+    def _token_header_variants(self):
+        if not self.token:
+            return []
+        return [
+            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Token': self.token},
+            {'Accept': 'application/json', 'Content-Type': 'application/json', 'Authorization': f"Bearer {self.token}"},
+            {'Accept': 'application/json', 'Content-Type': 'application/json', 'token': self.token},
+        ]
 
     def _find_first_list_of_dicts(self, obj):
         if isinstance(obj, list) and obj and isinstance(obj[0], dict):
@@ -1176,23 +1183,72 @@ class MarzneshinAPI(BasePanelAPI):
 
     def list_inbounds(self):
         try:
+            # Token-based API attempts
             if self.token:
-                url = f"{self.api_base}/apiv2/inbounds"
-                resp = self.session.get(url, headers={'Accept': 'application/json', 'Token': self.token}, timeout=12)
+                endpoints = [
+                    f"{self.api_base}/apiv2/inbounds",
+                    f"{self.api_base}/apiv2/inbounds/list",
+                    f"{self.api_base}/apiv2/inbound",
+                    f"{self.base_url}/apiv2/inbounds",
+                    f"{self.base_url}/apiv2/inbounds/list",
+                    f"{self.base_url}/apiv2/inbound",
+                ]
+                last_err = None
+                for hdrs in self._token_header_variants():
+                    for url in endpoints:
+                        try:
+                            resp = self.session.get(url, headers=hdrs, timeout=12)
+                        except requests.RequestException as e:
+                            last_err = str(e)
+                            continue
+                        if resp.status_code != 200:
+                            last_err = f"HTTP {resp.status_code} @ {url}"
+                            continue
+                        try:
+                            data = resp.json()
+                        except ValueError:
+                            last_err = f"non-JSON @ {url}"
+                            continue
+                        items = self._find_first_list_of_dicts(data)
+                        if not isinstance(items, list):
+                            last_err = "لیست اینباند نامعتبر است"
+                            continue
+                        inbounds = []
+                        for it in items:
+                            if not isinstance(it, dict):
+                                continue
+                            inbounds.append({
+                                'id': it.get('id'),
+                                'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                                'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                                'port': it.get('port') or it.get('listen_port') or 0,
+                            })
+                        return inbounds, "Success"
+                if last_err:
+                    logger.error(f"Marzneshin list_inbounds (token) error: {last_err}")
+            # Fallback to cookie-based X-UI
+            if not self.username or not self.password:
+                return None, "اطلاعات ورود پنل تنظیم نشده است"
+            login = self.session.post(f"{self.base_url}/login", json={"username": self.username, "password": self.password}, headers=self._json_headers, timeout=12)
+            login.raise_for_status()
+            xui_list_endpoints = [
+                f"{self.base_url}/xui/API/inbounds/",
+                f"{self.base_url}/xui/API/inbounds/list",
+                f"{self.base_url}/xui/api/inbounds",
+            ]
+            for url in xui_list_endpoints:
+                resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
                 if resp.status_code != 200:
-                    return None, f"HTTP {resp.status_code} @ {url}"
+                    continue
                 try:
                     data = resp.json()
                 except ValueError:
-                    body = resp.text or ''
-                    return None, f"پاسخ JSON معتبر نیست @ {url} :: {body[:200]}"
-                items = self._find_first_list_of_dicts(data)
+                    continue
+                items = data.get('obj') if isinstance(data, dict) else data
                 if not isinstance(items, list):
-                    return None, "لیست اینباند نامعتبر است"
+                    continue
                 inbounds = []
                 for it in items:
-                    if not isinstance(it, dict):
-                        continue
                     inbounds.append({
                         'id': it.get('id'),
                         'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
@@ -1200,27 +1256,7 @@ class MarzneshinAPI(BasePanelAPI):
                         'port': it.get('port') or it.get('listen_port') or 0,
                     })
                 return inbounds, "Success"
-            # Fallback to cookie-based X-UI
-            if not self.username or not self.password:
-                return None, "اطلاعات ورود پنل تنظیم نشده است"
-            login = self.session.post(f"{self.base_url}/login", json={"username": self.username, "password": self.password}, headers=self._json_headers, timeout=12)
-            login.raise_for_status()
-            resp = self.session.get(f"{self.base_url}/xui/API/inbounds/", headers={'Accept': 'application/json'}, timeout=12)
-            if resp.status_code != 200:
-                return None, f"HTTP {resp.status_code}"
-            data = resp.json()
-            items = data.get('obj') if isinstance(data, dict) else data
-            if not isinstance(items, list):
-                return None, "لیست اینباند نامعتبر است"
-            inbounds = []
-            for it in items:
-                inbounds.append({
-                    'id': it.get('id'),
-                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                    'port': it.get('port') or it.get('listen_port') or 0,
-                })
-            return inbounds, "Success"
+            return None, "لیست اینباند در دسترس نیست"
         except requests.RequestException as e:
             logger.error(f"Marzneshin list_inbounds error: {e}")
             return None, str(e)
@@ -1245,28 +1281,70 @@ class MarzneshinAPI(BasePanelAPI):
                 "reset": 0
             }
             settings_obj = {"clients": [client_obj]}
+            # Token-based attempts
             if self.token:
-                ep = f"{self.api_base}/apiv2/inbounds/addClient"
-                payload = {"id": int(inbound_id), "settings": json.dumps(settings_obj)}
-                resp = self.session.post(ep, data=json.dumps(payload).encode('utf-8'), headers={'Accept': 'application/json', 'Content-Type': 'application/json', 'Token': self.token}, timeout=15)
-                if resp.status_code not in (200, 201):
-                    return None, None, f"HTTP {resp.status_code} @ {ep}: {(resp.text or '')[:200]}"
-                try:
-                    data = resp.json()
-                except ValueError:
-                    return None, None, f"non-JSON response @ {ep}: {(resp.text or '')[:200]}"
-                ok = isinstance(data, dict) and (
-                    data.get('success') is True or
-                    str(data.get('status','')).lower() in ('ok','success','200') or
-                    str(data.get('code','')).startswith('2') or
-                    ('msg' in data and isinstance(data['msg'], str) and 'success' in data['msg'].lower())
-                )
-                if not ok:
-                    return None, None, f"API failure @ {ep}: {(resp.text or '')[:200]}"
-                # success
-                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-                sub_link = f"{origin}/sub/{subid}"
-                return f"user_{subid}", sub_link, "Success"
+                endpoints = [
+                    f"{self.api_base}/apiv2/inbounds/addClient",
+                    f"{self.api_base}/apiv2/inbound/addClient",
+                    f"{self.base_url}/apiv2/inbounds/addClient",
+                ]
+                last_preview = None
+                for hdrs in self._token_header_variants():
+                    for ep in endpoints:
+                        # 1) clients array payload
+                        payload1 = {"id": int(inbound_id), "clients": [client_obj]}
+                        try:
+                            r1 = self.session.post(ep, headers=hdrs, json=payload1, timeout=15)
+                        except requests.RequestException as e:
+                            last_preview = str(e)
+                            continue
+                        if r1.status_code in (200, 201):
+                            try:
+                                j1 = r1.json()
+                            except ValueError:
+                                j1 = {}
+                            if isinstance(j1, dict) and (j1.get('success') is True or str(j1.get('status','')).lower() in ('ok','success','200') or str(j1.get('code','')).startswith('2') or ('msg' in j1 and isinstance(j1['msg'], str) and 'success' in j1['msg'].lower())):
+                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
+                                sub_link = f"{origin}/sub/{subid}"
+                                return f"user_{subid}", sub_link, "Success"
+                            last_preview = (r1.text or '')[:200]
+                        # 2) settings string
+                        payload2 = {"id": int(inbound_id), "settings": json.dumps(settings_obj)}
+                        try:
+                            r2 = self.session.post(ep, headers=hdrs, json=payload2, timeout=15)
+                        except requests.RequestException as e:
+                            last_preview = str(e)
+                            continue
+                        if r2.status_code in (200, 201):
+                            try:
+                                j2 = r2.json()
+                            except ValueError:
+                                j2 = {}
+                            if isinstance(j2, dict) and (j2.get('success') is True or str(j2.get('status','')).lower() in ('ok','success','200') or str(j2.get('code','')).startswith('2') or ('msg' in j2 and isinstance(j2['msg'], str) and 'success' in j2['msg'].lower())):
+                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
+                                sub_link = f"{origin}/sub/{subid}"
+                                return f"user_{subid}", sub_link, "Success"
+                            last_preview = (r2.text or '')[:200]
+                        # 3) form-urlencoded settings
+                        form_headers = dict(hdrs)
+                        form_headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
+                        try:
+                            r3 = self.session.post(ep, headers=form_headers, data={'id': str(int(inbound_id)), 'settings': json.dumps(settings_obj)}, timeout=15)
+                        except requests.RequestException as e:
+                            last_preview = str(e)
+                            continue
+                        if r3.status_code in (200, 201):
+                            try:
+                                j3 = r3.json()
+                            except ValueError:
+                                j3 = {}
+                            if isinstance(j3, dict) and (j3.get('success') is True or str(j3.get('status','')).lower() in ('ok','success','200') or str(j3.get('code','')).startswith('2') or ('msg' in j3 and isinstance(j3['msg'], str) and 'success' in j3['msg'].lower())):
+                                origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
+                                sub_link = f"{origin}/sub/{subid}"
+                                return f"user_{subid}", sub_link, "Success"
+                            last_preview = (r3.text or '')[:200]
+                if last_preview:
+                    return None, None, f"API failure: {last_preview}"
             # Fallback cookie-based X-UI
             if not self.username or not self.password:
                 return None, None, "اطلاعات ورود پنل تنظیم نشده است"
@@ -1283,6 +1361,181 @@ class MarzneshinAPI(BasePanelAPI):
         except requests.RequestException as e:
             logger.error(f"Marzneshin create_user_on_inbound error: {e}")
             return None, None, str(e)
+
+    async def get_user(self, username):
+        # Try to find client across inbounds similar to X-UI approach
+        inbounds, msg = self.list_inbounds()
+        if not inbounds:
+            return None, msg
+        # helper to fetch inbound detail
+        def _fetch_inbound_detail(inbound_id: int):
+            # token-based endpoints
+            if self.token:
+                for hdrs in self._token_header_variants():
+                    for p in [
+                        f"{self.api_base}/apiv2/inbounds/get/{inbound_id}",
+                        f"{self.api_base}/apiv2/inbound/get/{inbound_id}",
+                        f"{self.base_url}/apiv2/inbounds/get/{inbound_id}",
+                    ]:
+                        try:
+                            resp = self.session.get(p, headers=hdrs, timeout=12)
+                            if resp.status_code != 200:
+                                continue
+                            data = resp.json()
+                            inbound = data.get('obj') if isinstance(data, dict) else data
+                            if isinstance(inbound, dict):
+                                return inbound
+                        except Exception:
+                            continue
+            # cookie-based
+            for p in [
+                f"{self.base_url}/xui/API/inbounds/get/{inbound_id}",
+                f"{self.base_url}/xui/api/inbounds/get/{inbound_id}",
+            ]:
+                try:
+                    resp = self.session.get(p, headers={'Accept': 'application/json'}, timeout=12)
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+                    inbound = data.get('obj') if isinstance(data, dict) else data
+                    if isinstance(inbound, dict):
+                        return inbound
+                except Exception:
+                    continue
+            return None
+
+        for ib in inbounds:
+            inbound_id = ib.get('id')
+            inbound = _fetch_inbound_detail(inbound_id)
+            if not inbound:
+                continue
+            settings_str = inbound.get('settings')
+            try:
+                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else {}
+            except Exception:
+                settings_obj = {}
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                continue
+            for c in clients:
+                if c.get('email') == username:
+                    total_bytes = int(c.get('totalGB', 0) or 0)
+                    expiry_ms = int(c.get('expiryTime', 0) or 0)
+                    expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
+                    subid = c.get('subId') or ''
+                    origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
+                    sub_link = f"{origin}/sub/{subid}" if subid else ''
+                    return {
+                        'data_limit': total_bytes,
+                        'used_traffic': 0,
+                        'expire': expire,
+                        'subscription_url': sub_link,
+                    }, "Success"
+        return None, "کاربر یافت نشد"
+
+    async def renew_user_in_panel(self, username, plan):
+        inbounds, msg = self.list_inbounds()
+        if not inbounds:
+            return None, msg
+        now_ms = int(datetime.now().timestamp() * 1000)
+        try:
+            add_bytes = int(float(plan['traffic_gb']) * (1024 ** 3))
+        except Exception:
+            add_bytes = 0
+        try:
+            days = int(plan['duration_days'])
+            add_ms = days * 86400 * 1000 if days > 0 else 0
+        except Exception:
+            add_ms = 0
+
+        def _fetch_inbound_detail(inbound_id: int):
+            if self.token:
+                for hdrs in self._token_header_variants():
+                    for p in [
+                        f"{self.api_base}/apiv2/inbounds/get/{inbound_id}",
+                        f"{self.api_base}/apiv2/inbound/get/{inbound_id}",
+                        f"{self.base_url}/apiv2/inbounds/get/{inbound_id}",
+                    ]:
+                        try:
+                            resp = self.session.get(p, headers=hdrs, timeout=12)
+                            if resp.status_code != 200:
+                                continue
+                            data = resp.json()
+                            inbound = data.get('obj') if isinstance(data, dict) else data
+                            if isinstance(inbound, dict):
+                                return inbound
+                        except Exception:
+                            continue
+            for p in [
+                f"{self.base_url}/xui/API/inbounds/get/{inbound_id}",
+                f"{self.base_url}/xui/api/inbounds/get/{inbound_id}",
+            ]:
+                try:
+                    resp = self.session.get(p, headers={'Accept': 'application/json'}, timeout=12)
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+                    inbound = data.get('obj') if isinstance(data, dict) else data
+                    if isinstance(inbound, dict):
+                        return inbound
+                except Exception:
+                    continue
+            return None
+
+        def _update_client_on(inbound_id: int, updated_client: dict):
+            # token-based
+            if self.token:
+                endpoints = [
+                    f"{self.api_base}/apiv2/inbounds/updateClient",
+                    f"{self.base_url}/apiv2/inbounds/updateClient",
+                ]
+                settings_payload = json.dumps({"clients": [updated_client]})
+                for hdrs in self._token_header_variants():
+                    for ep in endpoints:
+                        payload = {"id": int(inbound_id), "settings": settings_payload}
+                        try:
+                            resp = self.session.post(ep, headers=hdrs, json=payload, timeout=15)
+                            if resp.status_code in (200, 201):
+                                return True
+                        except requests.RequestException:
+                            continue
+            # cookie-based
+            settings_payload = json.dumps({"clients": [updated_client]})
+            for ep in ["/xui/API/inbounds/updateClient", "/xui/api/inbounds/updateClient"]:
+                try:
+                    resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json={"id": int(inbound_id), "settings": settings_payload}, timeout=15)
+                    if resp.status_code in (200, 201):
+                        return True
+                except requests.RequestException:
+                    continue
+            return False
+
+        for ib in inbounds:
+            inbound_id = ib.get('id')
+            inbound = _fetch_inbound_detail(inbound_id)
+            if not inbound:
+                continue
+            settings_str = inbound.get('settings')
+            try:
+                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else {}
+            except Exception:
+                settings_obj = {}
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                continue
+            for c in clients:
+                if c.get('email') == username:
+                    current_exp = int(c.get('expiryTime', 0) or 0)
+                    base = max(current_exp, now_ms)
+                    target_exp = base + (add_ms if add_ms > 0 else 0)
+                    new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
+                    updated = dict(c)
+                    updated['expiryTime'] = target_exp
+                    updated['totalGB'] = new_total
+                    if _update_client_on(inbound_id, updated):
+                        return updated, "Success"
+                    return None, "به‌روزرسانی کلاینت ناموفق بود"
+        return None, "کلاینت برای تمدید یافت نشد"
 
 
 def VpnPanelAPI(panel_id: int) -> BasePanelAPI:
