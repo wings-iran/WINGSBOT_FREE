@@ -1335,15 +1335,23 @@ class MarzneshinAPI(BasePanelAPI):
                 detail = (self._last_token_error or "نامشخص")
                 return None, f"توکن دریافت نشد: {detail}"
             if self.token:
-                bases = list({self.base_url, self.api_base})
-                endpoints = []
-                for b in bases:
-                    endpoints.extend([
-                        f"{b}/api/inbounds",
-                        f"{b}/api/inbounds/list",
-                        f"{b}/app/api/inbounds",
-                        f"{b}/app/api/inbounds/list",
-                    ])
+                # Per docs: use only /api/inbounds (optionally with page/size)
+                bases = []
+                bu = self.base_url.rstrip('/')
+                bases.append(bu)
+                try:
+                    parts = urlsplit(self.base_url)
+                    host = parts.hostname or ''
+                    if host:
+                        port = ''
+                        if parts.port and not ((parts.scheme == 'http' and parts.port == 80) or (parts.scheme == 'https' and parts.port == 443)):
+                            port = f":{parts.port}"
+                        origin = f"{parts.scheme}://{host}{port}"
+                        if origin not in bases:
+                            bases.append(origin)
+                except Exception:
+                    pass
+                endpoints = [f"{b}/api/inbounds" for b in bases]
                 last_err = None
                 tried_refresh = False
                 header_sets = self._token_header_variants()
