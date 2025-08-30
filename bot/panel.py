@@ -1222,10 +1222,10 @@ class MarzneshinAPI(BasePanelAPI):
         last_err = None
         for base in bases:
             json_candidates = [
-                # Per server docs: /api/token first (JSON)
+                # Per server docs: /api/token (JSON)
                 {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
-                # Fallback: /api/admin/token (JSON)
-                {"url": f"{base}/api/admin/token", "json": {"username": self.username, "password": self.password}},
+                # Also try with trailing slash (some routers require it)
+                {"url": f"{base}/api/token/", "json": {"username": self.username, "password": self.password}},
             ]
             for c in json_candidates:
                 try:
@@ -1258,7 +1258,7 @@ class MarzneshinAPI(BasePanelAPI):
         for base in bases:
             form_candidates = [
                 {"url": f"{base}/api/token", "data": {"username": self.username, "password": self.password}},
-                {"url": f"{base}/api/admin/token", "data": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/token/", "data": {"username": self.username, "password": self.password}},
             ]
             for c in form_candidates:
                 try:
