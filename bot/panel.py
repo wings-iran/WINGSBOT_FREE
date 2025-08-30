@@ -1637,33 +1637,75 @@ class MarzneshinAPI(BasePanelAPI):
             settings = query_db("SELECT protocol, tag FROM panel_inbounds WHERE panel_id = ?", (self.panel_id,)) or []
         except Exception:
             settings = []
-        # Collect service_ids: prefer live from API (/api/inbounds), fallback to DB tags
-        service_ids = []
-        # Try from API
+        # Collect service_ids: prefer live from API (/api/services). If none, create a service using all inbound IDs
+        service_ids: list[int] = []
+        # 1) Fetch existing services
         try:
-            inb, _msg = self.list_inbounds()
-            if isinstance(inb, list) and inb:
-                for it in inb:
-                    if isinstance(it, dict):
-                        sid = it.get('id')
-                        try:
-                            if sid is not None:
-                                service_ids.append(int(sid))
-                        except Exception:
-                            continue
+            for url in [f"{self.base_url}/api/services", f"{self.base_url}/api/services?page=1&size=100"]:
+                r = self.session.get(url, headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                items = data if isinstance(data, list) else (data.get('services') if isinstance(data, dict) else [])
+                if isinstance(items, list):
+                    for it in items:
+                        if isinstance(it, dict) and isinstance(it.get('id'), int):
+                            service_ids.append(it['id'])
+                    if service_ids:
+                        break
         except Exception:
             pass
-        # Fallback to DB
-        if not service_ids and settings:
-            tmp = []
-            for row in settings:
-                tag = row.get('tag')
-                if isinstance(tag, str) and tag.strip():
-                    try:
-                        tmp.append(int(tag.strip()))
-                    except Exception:
+        # 2) If no service exists, create one with all inbounds
+        if not service_ids:
+            try:
+                # get inbound ids
+                inbound_ids: list[int] = []
+                for url in [f"{self.base_url}/api/inbounds", f"{self.base_url}/api/inbounds?page=1&size=100"]:
+                    ri = self.session.get(url, headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+                    if ri.status_code != 200:
                         continue
-            service_ids = tmp
+                    di = ri.json()
+                    arr = di if isinstance(di, list) else (di.get('inbounds') if isinstance(di, dict) else [])
+                    if isinstance(arr, list):
+                        for it in arr:
+                            if isinstance(it, dict) and isinstance(it.get('id'), int):
+                                inbound_ids.append(it['id'])
+                        if inbound_ids:
+                            break
+                if inbound_ids:
+                    name = f"auto_service_{uuid.uuid4().hex[:6]}"
+                    payload_service = {"inbound_ids": inbound_ids, "name": name}
+                    rs = self.session.post(f"{self.base_url}/api/services", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=payload_service, timeout=15)
+                    if rs.status_code in (200, 201):
+                        try:
+                            js = rs.json()
+                            if isinstance(js, dict) and isinstance(js.get('id'), int):
+                                service_ids = [js['id']]
+                        except Exception:
+                            pass
+                # Fallback to DB tags as inbound ids -> create service
+                if not service_ids and settings:
+                    inbound_ids = []
+                    for row in settings:
+                        tag = row.get('tag')
+                        if isinstance(tag, str) and tag.strip():
+                            try:
+                                inbound_ids.append(int(tag.strip()))
+                            except Exception:
+                                continue
+                    if inbound_ids:
+                        name = f"auto_service_{uuid.uuid4().hex[:6]}"
+                        payload_service = {"inbound_ids": inbound_ids, "name": name}
+                        rs = self.session.post(f"{self.base_url}/api/services", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=payload_service, timeout=15)
+                        if rs.status_code in (200, 201):
+                            try:
+                                js = rs.json()
+                                if isinstance(js, dict) and isinstance(js.get('id'), int):
+                                    service_ids = [js['id']]
+                            except Exception:
+                                pass
+            except Exception:
+                pass
         # Map traffic/days
         try:
             tgb = float(plan['traffic_gb'])
