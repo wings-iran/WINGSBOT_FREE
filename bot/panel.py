@@ -1218,21 +1218,26 @@ class MarzneshinAPI(BasePanelAPI):
                 bases.append(root)
 
         # Try JSON login on /api/admin/token first (per docs), then other variants
+        last_err = None
         for base in bases:
             json_candidates = [
                 {"url": f"{base}/api/admin/token", "json": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/token", "json": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/login", "json": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/auth/login", "json": {"username": self.username, "password": self.password}},
+                # OAuth-like common path
+                {"url": f"{base}/api/login/access-token", "json": {"username": self.username, "password": self.password}},
             ]
             for c in json_candidates:
                 try:
                     resp = self.session.post(c["url"], json=c["json"], headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
                     if resp.status_code not in (200, 201):
+                        last_err = f"HTTP {resp.status_code} @ {c['url']}"
                         continue
                     try:
                         data = resp.json()
                     except ValueError:
+                        last_err = f"non-JSON @ {c['url']}"
                         continue
                     token_val = None
                     for key in ["access_token", "token"]:
@@ -1247,21 +1252,25 @@ class MarzneshinAPI(BasePanelAPI):
                         self.token = token_val.strip()
                         return True
                 except requests.RequestException:
+                    last_err = f"request error @ {c['url']}"
                     continue
         # As a last resort, try form-encoded on the same bases
         for base in bases:
             form_candidates = [
                 {"url": f"{base}/api/admin/token", "data": {"username": self.username, "password": self.password}},
                 {"url": f"{base}/api/token", "data": {"username": self.username, "password": self.password}},
+                {"url": f"{base}/api/login/access-token", "data": {"username": self.username, "password": self.password, "grant_type": "password"}},
             ]
             for c in form_candidates:
                 try:
                     resp = self.session.post(c["url"], data=c["data"], headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
                     if resp.status_code not in (200, 201):
+                        last_err = f"HTTP {resp.status_code} @ {c['url']}"
                         continue
                     try:
                         data = resp.json()
                     except ValueError:
+                        last_err = f"non-JSON @ {c['url']}"
                         continue
                     token_val = None
                     for key in ["access_token", "token"]:
@@ -1274,7 +1283,11 @@ class MarzneshinAPI(BasePanelAPI):
                         self.token = token_val.strip()
                         return True
                 except requests.RequestException:
+                    last_err = f"request error @ {c['url']}"
                     continue
+        if last_err:
+            from .config import logger
+            logger.error(f"Marzneshin: failed to obtain token: {last_err}")
         return False
 
     def _find_first_list_of_dicts(self, obj):
