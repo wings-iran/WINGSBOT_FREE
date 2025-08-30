@@ -1659,7 +1659,11 @@ class MarzneshinAPI(BasePanelAPI):
                     continue
                 data = r.json()
                 self._log_json(f"GET {url}", data)
-                items = data if isinstance(data, list) else (data.get('services') if isinstance(data, dict) else [])
+                items = []
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    items = data.get('services') or data.get('items') or data.get('obj') or []
                 if isinstance(items, list):
                     for it in items:
                         if isinstance(it, dict) and isinstance(it.get('id'), int):
