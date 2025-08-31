@@ -192,17 +192,14 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         try:
             sent = False
             # If 3x-UI, try to send direct configs along with message
-            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'list_inbounds') and hasattr(api, 'get_configs_for_user_on_inbound'):
+            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'get_configs_for_user_on_inbound'):
                 try:
-                    inbounds, _m = api.list_inbounds()
-                    if inbounds:
-                        ib_id = inbounds[0].get('id')
-                        confs = api.get_configs_for_user_on_inbound(ib_id, marzban_username)
-                        if confs:
-                            text_cfg = "\n".join(f"<code>{c}</code>" for c in confs)
-                            full_message = user_message + "\n\n" + text_cfg
-                            await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
-                            sent = True
+                    confs = api.get_configs_for_user_on_inbound(inbound_id, marzban_username)
+                    if confs:
+                        text_cfg = "\n".join(f"<code>{c}</code>" for c in confs)
+                        full_message = user_message + "\n\n" + text_cfg
+                        await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
+                        sent = True
                 except Exception:
                     sent = False
             if not sent:
@@ -304,7 +301,7 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
         if not sent:
             # If 3x-UI and configs failed, do NOT send sub link; send message only
             if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui'):
-                await context.bot.send_message(order['user_id'], user_message + "\n\nکانفیگی یافت نشد. از مدیریت بخواهید دکمه ‘دریافت لینک مجدد’ را بزنید.", parse_mode=ParseMode.HTML)
+                await context.bot.send_message(order['user_id'], user_message + "\n\nکانفیگی یافت نشد. از مدیریت بخواهید دکمه 'دریافت لینک مجدد' را بزنید.", parse_mode=ParseMode.HTML)
             else:
                 # For other panels, fallback to link+QR
                 try:

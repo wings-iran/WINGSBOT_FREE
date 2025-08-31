@@ -618,8 +618,9 @@ class ThreeXuiAPI(BasePanelAPI):
             except Exception:
                 expiry_ms = 0
 
+            new_client_id = str(uuid.uuid4())
             client_obj = {
-                "id": str(uuid.uuid4()),
+                "id": new_client_id,
                 "email": new_username,
                 "totalGB": total_bytes,
                 "expiryTime": expiry_ms,
@@ -716,6 +717,7 @@ class ThreeXuiAPI(BasePanelAPI):
                     port = f":{parts.port}"
                 origin = f"{parts.scheme}://{host}{port}"
             sub_link = f"{origin}/sub/{subid}"
+            # Return username and also stash client id for downstream if needed (admin layer persists inbound id)
             return new_username, sub_link, "Success"
         except requests.RequestException as e:
             logger.error(f"3x-UI create_user_on_inbound error: {e}")
