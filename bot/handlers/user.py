@@ -197,6 +197,11 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http')
         else user_info.get('subscription_url', 'لینک یافت نشد')
     )
+    # persist last link for fast reuse
+    try:
+        execute_db("UPDATE orders SET last_link = ? WHERE id = ?", (sub_link or '', order_id))
+    except Exception:
+        pass
 
     text = (
         f"<b>\U0001F4E6 مشخصات سرویس (<code>{marzban_username}</code>)</b>\n\n"
@@ -302,6 +307,10 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http')
             else user_info.get('subscription_url', 'لینک یافت نشد')
         )
+        try:
+            execute_db("UPDATE orders SET last_link = ? WHERE id = ?", (sub_link or '', order_id))
+        except Exception:
+            pass
         caption = f"\U0001F511 کلید جدید صادر شد:\n<code>{sub_link}</code>"
         if qrcode:
             try:
