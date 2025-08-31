@@ -1620,11 +1620,14 @@ class ThreeXuiAPI(BasePanelAPI):
             if not old:
                 return None, "کلاینت یافت نشد"
             add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
-            add_ms = (int(add_days) * 86400 * 1000) if add_days and int(add_days) > 0 else 0
             cur_total = int(old.get('totalGB', 0) or 0)
             cur_exp = int(old.get('expiryTime', 0) or 0)
-            base = max(cur_exp, now_ms)
-            target_exp = base + add_ms if add_ms > 0 else cur_exp
+            # Detect seconds vs milliseconds for expiry
+            is_ms = cur_exp > 10**11
+            now_unit = now_ms if is_ms else int(now_ms / 1000)
+            add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
+            base = max(cur_exp, now_unit)
+            target_exp = base + add_unit if add_unit > 0 else cur_exp
             new_total = cur_total + (add_bytes if add_bytes > 0 else 0)
             # Delete old client first
             old_uuid = old.get('id') or old.get('uuid') or ''
