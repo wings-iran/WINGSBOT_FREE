@@ -190,15 +190,31 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
             f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
         )
         try:
-            # Try sending QR code if it's a single link and not too long
-            try:
-                import io, qrcode
-                qr_buf = io.BytesIO()
-                qrcode.make(config_link).save(qr_buf, format='PNG')
-                qr_buf.seek(0)
-                await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=user_message, parse_mode=ParseMode.HTML)
-            except Exception:
-                await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+            sent = False
+            # If 3x-UI, try to send direct configs along with message
+            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'list_inbounds') and hasattr(api, 'get_configs_for_user_on_inbound'):
+                try:
+                    inbounds, _m = api.list_inbounds()
+                    if inbounds:
+                        ib_id = inbounds[0].get('id')
+                        confs = api.get_configs_for_user_on_inbound(ib_id, marzban_username)
+                        if confs:
+                            text_cfg = "\n".join(f"<code>{c}</code>" for c in confs)
+                            full_message = user_message + "\n\n" + text_cfg
+                            await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
+                            sent = True
+                except Exception:
+                    sent = False
+            if not sent:
+                # Try sending QR code if it's a single link
+                try:
+                    import io, qrcode
+                    qr_buf = io.BytesIO()
+                    qrcode.make(config_link).save(qr_buf, format='PNG')
+                    qr_buf.seek(0)
+                    await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=user_message, parse_mode=ParseMode.HTML)
+                except Exception:
+                    await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
             done_text = base_text + f"\n\n\u2705 **ارسال خودکار موفق بود.**"
             if is_media:
                 await _safe_edit_caption(query.message, done_text, parse_mode=ParseMode.HTML, reply_markup=None)

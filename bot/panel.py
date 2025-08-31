@@ -785,6 +785,123 @@ class ThreeXuiAPI(BasePanelAPI):
                 continue
         return None
 
+    def get_configs_for_user_on_inbound(self, inbound_id: int, username: str) -> list:
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return []
+        try:
+            import json as _json
+            settings_str = inbound.get('settings')
+            settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            clients = settings_obj.get('clients') or []
+            client = None
+            for c in clients:
+                if c.get('email') == username:
+                    client = c
+                    break
+            if not client:
+                return []
+            proto = (inbound.get('protocol') or '').lower()
+            port = inbound.get('port') or inbound.get('listen_port') or 0
+            # stream settings
+            stream_raw = inbound.get('streamSettings') or inbound.get('stream_settings')
+            stream = _json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+            network = (stream.get('network') or '').lower() or 'tcp'
+            security = (stream.get('security') or '').lower() or ''
+            # tls/sni
+            sni = ''
+            if security == 'tls':
+                tls = stream.get('tlsSettings') or {}
+                sni = tls.get('serverName') or ''
+            elif security == 'reality':
+                reality = stream.get('realitySettings') or {}
+                sni = (reality.get('serverNames') or [''])[0]
+            # ws/grpc
+            path = ''
+            host_header = ''
+            service_name = ''
+            if network == 'ws':
+                ws = stream.get('wsSettings') or {}
+                path = ws.get('path') or '/'
+                headers = ws.get('headers') or {}
+                host_header = headers.get('Host') or headers.get('host') or ''
+            if network == 'grpc':
+                grpc = stream.get('grpcSettings') or {}
+                service_name = grpc.get('serviceName') or ''
+            # host (domain)
+            from urllib.parse import urlsplit as _us
+            if getattr(self, 'sub_base', ''):
+                parts = _us(self.sub_base)
+            else:
+                parts = _us(self.base_url)
+            host = parts.hostname or ''
+            # client id/password
+            uuid = client.get('id') or client.get('uuid') or ''
+            passwd = client.get('password') or ''
+            name = username
+            configs = []
+            if proto == 'vless' and uuid:
+                qs = []
+                qs.append('encryption=none')
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                flow = client.get('flow')
+                if flow:
+                    qs.append(f'flow={flow}')
+                query = '&'.join(qs)
+                uri = f"vless://{uuid}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            elif proto == 'vmess' and uuid:
+                vm = {
+                    "v": "2",
+                    "ps": name,
+                    "add": host,
+                    "port": str(port),
+                    "id": uuid,
+                    "aid": "0",
+                    "net": network,
+                    "type": "none",
+                    "host": host_header or sni or host,
+                    "path": path or "/",
+                    "tls": "tls" if security in ("tls","reality") else "",
+                    "sni": sni or ""
+                }
+                import base64 as _b64
+                b = _b64.b64encode(_json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                configs.append(f"vmess://{b}")
+            elif proto == 'trojan' and passwd:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                query = '&'.join(qs)
+                uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            return configs
+        except Exception:
+            return []
+
     async def renew_user_in_panel(self, username, plan):
         if not self.get_token():
             return None, "خطا در ورود به پنل 3x-UI"
