@@ -469,6 +469,163 @@ class XuiAPI(BasePanelAPI):
                 continue
         return None
 
+    def get_configs_for_user_on_inbound(self, inbound_id: int, username: str, preferred_id: str = None) -> list:
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return []
+        # helper to find client
+        def _find_client(inv):
+            s = inv.get('settings')
+            try:
+                obj = json.loads(s) if isinstance(s, str) else (s or {})
+            except Exception:
+                obj = {}
+            chosen = None
+            for c in (obj.get('clients') or []):
+                if preferred_id and (c.get('id') == preferred_id or c.get('uuid') == preferred_id):
+                    return c
+                if c.get('email') == username and chosen is None:
+                    chosen = c
+            return chosen
+        client = _find_client(inbound)
+        # small retry to allow propagation
+        retries = 2
+        while client is None and retries > 0:
+            _time.sleep(0.7)
+            inbound = self._fetch_inbound_detail(inbound_id)
+            if not inbound:
+                break
+            client = _find_client(inbound)
+            retries -= 1
+        if not client:
+            return []
+        try:
+            settings_str = inbound.get('settings')
+            settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            proto = (inbound.get('protocol') or '').lower()
+            port = inbound.get('port') or inbound.get('listen_port') or 0
+            stream_raw = inbound.get('streamSettings') or inbound.get('stream_settings')
+            stream = json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+            network = (stream.get('network') or '').lower() or 'tcp'
+            security = (stream.get('security') or '').lower() or ''
+            sni = ''
+            if security == 'tls':
+                tls = stream.get('tlsSettings') or {}
+                sni = tls.get('serverName') or ''
+            elif security == 'reality':
+                reality = stream.get('realitySettings') or {}
+                sni = (reality.get('serverNames') or [''])[0]
+            path = ''
+            host_header = ''
+            service_name = ''
+            header_type = ''
+            if network == 'ws':
+                ws = stream.get('wsSettings') or {}
+                path = ws.get('path') or '/'
+                headers = ws.get('headers') or {}
+                host_header = headers.get('Host') or headers.get('host') or ''
+            elif network == 'tcp':
+                tcp = stream.get('tcpSettings') or {}
+                header = tcp.get('header') or {}
+                if (header.get('type') or '').lower() == 'http':
+                    header_type = 'http'
+                    req = header.get('request') or {}
+                    rp = req.get('path')
+                    if isinstance(rp, list) and rp:
+                        path = rp[0] or '/'
+                    elif isinstance(rp, str) and rp:
+                        path = rp
+                    else:
+                        path = '/'
+                    h = req.get('headers') or {}
+                    hh = h.get('Host') or h.get('host') or ''
+                    if isinstance(hh, list) and hh:
+                        host_header = hh[0]
+                    elif isinstance(hh, str):
+                        host_header = hh
+            if network == 'grpc':
+                grpc = stream.get('grpcSettings') or {}
+                service_name = grpc.get('serviceName') or ''
+            # host
+            parts = urlsplit(getattr(self, 'sub_base', '') or self.base_url)
+            host = parts.hostname or ''
+            if not host:
+                host = host_header or sni or host
+            uuid_val = client.get('id') or client.get('uuid') or ''
+            passwd = client.get('password') or ''
+            name = username
+            configs = []
+            if proto == 'vless' and uuid_val:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'tcp' and header_type == 'http':
+                    qs.append('headerType=http')
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
+                flow = client.get('flow')
+                if flow:
+                    qs.append(f'flow={flow}')
+                query = '&'.join(qs)
+                uri = f"vless://{uuid_val}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            elif proto == 'vmess' and uuid_val:
+                vm = {
+                    "v": "2",
+                    "ps": name,
+                    "add": host,
+                    "port": str(port),
+                    "id": uuid_val,
+                    "aid": "0",
+                    "net": network,
+                    "type": "none",
+                    "host": host_header or sni or host,
+                    "path": path or "/",
+                    "tls": "tls" if security in ("tls","reality") else "",
+                    "sni": sni or ""
+                }
+                import base64 as _b64
+                b = _b64.b64encode(json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                configs.append(f"vmess://{b}")
+            elif proto == 'trojan' and passwd:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
+                query = '&'.join(qs)
+                uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            return configs
+        except Exception:
+            return []
+
     async def renew_user_in_panel(self, username, plan):
         # Login first
         if not self.get_token():

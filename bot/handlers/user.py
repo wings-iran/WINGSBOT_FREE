@@ -207,7 +207,7 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
             panel_type = (prow.get('panel_type') or '').lower()
     link_label = "\U0001F517 لینک اشتراک:"
     link_value = f"<code>{sub_link}</code>"
-    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
         # Do not show sub link for 3x-UI, show configs or a placeholder
         link_label = "\U0001F517 کانفیگ‌ها:"
         link_value = "کانفیگی یافت نشد. دکمه ‘دریافت لینک مجدد’ را بزنید تا ساخته شود."
@@ -272,7 +272,7 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
         if prow:
             panel_type = (prow.get('panel_type') or '').lower()
     # For 3x-UI/X-UI: build configs instead of sub link
-    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
         try:
             # ensure login for 3x-UI
             if hasattr(panel_api, 'get_token'):
