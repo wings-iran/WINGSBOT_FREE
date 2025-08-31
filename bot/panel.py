@@ -988,11 +988,12 @@ class ThreeXuiAPI(BasePanelAPI):
                 "/panel/api/inbounds/updateClient",
                 "/xui/api/inbound/updateClient",
             ]
-            endpoints = list(base_endpoints)
+            endpoints = []
             if old_uuid:
                 for be in base_endpoints:
                     if be.endswith('updateClient'):
                         endpoints.append(f"{be}/{old_uuid}")
+            endpoints.extend(base_endpoints)
             for ep in endpoints:
                 try:
                     r = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
