@@ -381,30 +381,6 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         # If 'config_link' looks like a subscription endpoint or contains multiple links, try to fetch real configs
         final_message = None
         try:
-<<<<<<< HEAD
-            sent = False
-            # If 3x-UI, try to send direct configs along with message
-            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'get_configs_for_user_on_inbound'):
-                try:
-                    confs = api.get_configs_for_user_on_inbound(inbound_id, marzban_username)
-                    if confs:
-                        text_cfg = "\n".join(f"<code>{c}</code>" for c in confs)
-                        full_message = user_message + "\n\n" + text_cfg
-                        await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
-                        sent = True
-                except Exception:
-                    sent = False
-            if not sent:
-                # Try sending QR code if it's a single link
-                try:
-                    import io, qrcode
-                    qr_buf = io.BytesIO()
-                    qrcode.make(config_link).save(qr_buf, format='PNG')
-                    qr_buf.seek(0)
-                    await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=user_message, parse_mode=ParseMode.HTML)
-                except Exception:
-                    await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
-=======
             looks_like_sub = isinstance(config_link, str) and ('/sub/' in config_link or config_link.startswith('http'))
             if looks_like_sub:
                 configs = _fetch_subscription_configs(config_link)
@@ -426,7 +402,6 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
             )
         try:
             await context.bot.send_message(order['user_id'], final_message, parse_mode=ParseMode.HTML)
->>>>>>> feature/txui-direct-configs
             done_text = base_text + f"\n\n\u2705 **ارسال خودکار موفق بود.**"
             if is_media:
                 await _safe_edit_caption(query.message, done_text, parse_mode=ParseMode.HTML, reply_markup=None)
@@ -485,21 +460,12 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         return
 
-<<<<<<< HEAD
-    # Directly send URL (config) to user; for 3x-UI also try sending direct configs
-=======
     # Build direct configs from inbound where possible; fallback to fetching sub content
->>>>>>> feature/txui-direct-configs
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
     execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ?, xui_inbound_id = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), int(inbound_id), order_id))
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
-<<<<<<< HEAD
 
-    # Build message body; for 3x-UI and X-UI we won't include sub link
-    user_message = (f"✅ سفارش شما تایید شد!\n\n"
-                    f"<b>پلن:</b> {plan['name']}\n" + (("\n" + (query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')))
-=======
     inbound_detail = getattr(api, '_fetch_inbound_detail', lambda _id: None)(int(inbound_id))
     configs = []
     if inbound_detail:
@@ -526,41 +492,21 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             f"<b>پلن:</b> {plan['name']}\n"
             f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
         )
->>>>>>> feature/txui-direct-configs
     try:
         sent = False
         if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(api, 'get_configs_for_user_on_inbound'):
             try:
                 confs = api.get_configs_for_user_on_inbound(inbound_id, username)
                 if confs:
-                    # Send QR for first config and list all configs as text
-                    cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
-                    try:
-                        import io, qrcode
-                        buf = io.BytesIO()
-                        qrcode.make(confs[0]).save(buf, format='PNG')
-                        buf.seek(0)
-                        await context.bot.send_photo(chat_id=order['user_id'], photo=buf, caption=user_message + "\n\n" + cfg_text, parse_mode=ParseMode.HTML)
-                    except Exception:
-                        await context.bot.send_message(order['user_id'], user_message + "\n\n" + cfg_text, parse_mode=ParseMode.HTML)
+                    text_cfg = "\n".join(f"<code>{c}</code>" for c in confs[:5])
+                    full_message = user_message + "\n\n" + text_cfg
+                    await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
                     sent = True
             except Exception:
                 sent = False
         if not sent:
-            # If 3x-UI/X-UI and configs failed, do NOT send sub link; send message only
-            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza'):
-                await context.bot.send_message(order['user_id'], user_message + "\n\nکانفیگی یافت نشد. از مدیریت بخواهید دکمه 'دریافت لینک مجدد' را بزنید.", parse_mode=ParseMode.HTML)
-            else:
-                # For other panels, fallback to link+QR
-                try:
-                    import io, qrcode
-                    qr_buf = io.BytesIO()
-                    qrcode.make(sub_link).save(qr_buf, format='PNG')
-                    qr_buf.seek(0)
-                    await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=(user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
-                except Exception:
-                    await context.bot.send_message(order['user_id'], (user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
-        ok_text = base_text + f"\n\n\u2705 **ارسال لینک با موفقیت انجام شد.**"
+            await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+        ok_text = base_text + f"\n\n\u2705 **ارسال با موفقیت انجام شد.**"
         if is_media:
             await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=None)
         else:
