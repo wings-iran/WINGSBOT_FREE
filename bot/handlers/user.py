@@ -12,6 +12,11 @@ from ..states import SUPPORT_AWAIT_TICKET
 from ..config import ADMIN_ID
 from ..helpers.tg import ltr_code, notify_admins
 from ..helpers.flow import set_flow, clear_flow
+import io
+try:
+    import qrcode
+except Exception:
+    qrcode = None
 
 # Normalize Persian/Arabic digits to ASCII
 _DIGIT_MAP = str.maketrans({
@@ -204,6 +209,7 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
     keyboard = [
         [InlineKeyboardButton("\U0001F504 تمدید این سرویس", callback_data=f"renew_service_{order_id}")],
         [InlineKeyboardButton("\U0001F517 دریافت لینک مجدد", callback_data=f"refresh_service_link_{order_id}")],
+        [InlineKeyboardButton("\U0001F511 تغییر کلید اتصال", callback_data=f"revoke_key_{order_id}")],
         [InlineKeyboardButton("\U0001F519 بازگشت به لیست سرویس‌ها", callback_data='my_services')],
     ]
     await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -238,6 +244,66 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(chat_id=query.message.chat_id, text=f"\U0001F517 لینک اشتراک به‌روز شده:\n<code>{sub_link}</code>", parse_mode=ParseMode.HTML)
     except Exception:
         pass
+    return ConversationHandler.END
+
+
+async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    try:
+        order_id = int(query.data.split('_')[-1])
+    except Exception:
+        await query.answer("خطا در شناسه سرویس", show_alert=True)
+        return ConversationHandler.END
+    order = query_db("SELECT * FROM orders WHERE id = ?", (order_id,), one=True)
+    if not order or order['user_id'] != query.from_user.id:
+        await query.answer("سرویس یافت نشد", show_alert=True)
+        return ConversationHandler.END
+    if not order.get('panel_id') or not order.get('marzban_username'):
+        await query.answer("اطلاعات سرویس ناقص است", show_alert=True)
+        return ConversationHandler.END
+    panel_api = VpnPanelAPI(panel_id=order['panel_id'])
+    # Only for Marzneshin we can revoke directly
+    try:
+        import requests as _rq
+        # Try to ensure token if available
+        if hasattr(panel_api, '_ensure_token'):
+            try:
+                panel_api._ensure_token()
+            except Exception:
+                pass
+        # Revoke sub
+        url = f"{panel_api.base_url}/api/users/{order['marzban_username']}/revoke_sub"
+        headers = {"Accept": "application/json"}
+        if getattr(panel_api, 'token', None):
+            headers["Authorization"] = f"Bearer {panel_api.token}"
+        r = panel_api.session.post(url, headers=headers, timeout=12)
+        if r.status_code not in (200, 201):
+            await query.answer("خطا در تغییر کلید", show_alert=True)
+            return ConversationHandler.END
+        # Fetch fresh link
+        user_info, message = await panel_api.get_user(order['marzban_username'])
+        if not user_info:
+            await query.answer("لینک جدید دریافت نشد", show_alert=True)
+            return ConversationHandler.END
+        sub_link = (
+            f"{panel_api.base_url}{user_info['subscription_url']}"
+            if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http')
+            else user_info.get('subscription_url', 'لینک یافت نشد')
+        )
+        caption = f"\U0001F511 کلید جدید صادر شد:\n<code>{sub_link}</code>"
+        if qrcode:
+            try:
+                buf = io.BytesIO()
+                qrcode.make(sub_link).save(buf, format='PNG')
+                buf.seek(0)
+                await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=caption, parse_mode=ParseMode.HTML)
+            except Exception:
+                await context.bot.send_message(chat_id=query.message.chat_id, text=caption, parse_mode=ParseMode.HTML)
+        else:
+            await context.bot.send_message(chat_id=query.message.chat_id, text=caption, parse_mode=ParseMode.HTML)
+    except Exception:
+        await query.answer("خطا در تغییر کلید", show_alert=True)
     return ConversationHandler.END
 
 
