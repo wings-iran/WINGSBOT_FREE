@@ -274,6 +274,12 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
     # For 3x-UI: build configs instead of sub link
     if panel_type in ('3xui','3x-ui','3x ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
         try:
+            # ensure login for 3x-UI
+            if hasattr(panel_api, 'get_token'):
+                try:
+                    panel_api.get_token()
+                except Exception:
+                    pass
             ib_id = None
             if order.get('xui_inbound_id'):
                 ib_id = int(order['xui_inbound_id'])
@@ -287,7 +293,13 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 except Exception:
                     pass
                 return ConversationHandler.END
-            confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+            # try multiple times to account for propagation
+            confs = []
+            for _ in range(4):
+                confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                if confs:
+                    break
+                time.sleep(1.0)
             if not confs:
                 try:
                     await context.bot.send_message(chat_id=query.message.chat_id, text="ساخت کانفیگ ناموفق بود - کمی بعد دوباره تلاش کنید.")
