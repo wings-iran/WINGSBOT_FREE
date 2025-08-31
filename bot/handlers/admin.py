@@ -212,7 +212,7 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # Default marzban flow (unchanged)
+    # Default marzban flow (now attempts to send actual configs if a sub link is returned)
     marzban_username, config_link, message = await api.create_user(order['user_id'], plan)
     if config_link and marzban_username:
         execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (marzban_username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
@@ -222,13 +222,30 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         await _apply_referral_bonus(order_id, context)
         cfg = query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True)
         footer = (cfg.get('value') if cfg else '') or ''
-        user_message = (
-            f"✅ سفارش شما تایید شد!\n\n"
-            f"<b>پلن:</b> {plan['name']}\n"
-            f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
-        )
+        # If 'config_link' looks like a subscription endpoint or contains multiple links, try to fetch real configs
+        final_message = None
         try:
-            await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+            looks_like_sub = isinstance(config_link, str) and ('/sub/' in config_link or config_link.startswith('http'))
+            if looks_like_sub:
+                configs = _fetch_subscription_configs(config_link)
+                if configs:
+                    preview = configs[:5]
+                    configs_text = "\n".join(preview)
+                    final_message = (
+                        f"✅ سفارش شما تایید شد!\n\n"
+                        f"<b>پلن:</b> {plan['name']}\n"
+                        f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
+                    )
+        except Exception:
+            pass
+        if not final_message:
+            final_message = (
+                f"✅ سفارش شما تایید شد!\n\n"
+                f"<b>پلن:</b> {plan['name']}\n"
+                f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
+            )
+        try:
+            await context.bot.send_message(order['user_id'], final_message, parse_mode=ParseMode.HTML)
             done_text = base_text + f"\n\n\u2705 **ارسال خودکار موفق بود.**"
             if is_media:
                 await _safe_edit_caption(query.message, done_text, parse_mode=ParseMode.HTML, reply_markup=None)
