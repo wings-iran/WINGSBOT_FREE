@@ -150,10 +150,13 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
                 add_days = int(plan.get('duration_days', 0))
             except Exception:
                 add_days = 0
-            if hasattr(api, 'renew_user_on_inbound'):
-                renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
-            elif hasattr(api, 'renew_by_recreate_on_inbound'):
+            # Prefer recreate strategy first for 3x-UI for maximum compatibility
+            if hasattr(api, 'renew_by_recreate_on_inbound'):
                 renewed_user, message = api.renew_by_recreate_on_inbound(inbound_id, marz_username, add_gb, add_days)
+                if not renewed_user and hasattr(api, 'renew_user_on_inbound'):
+                    renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
+            elif hasattr(api, 'renew_user_on_inbound'):
+                renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
             else:
                 renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
         else:
@@ -177,6 +180,13 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
     else:
         renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
     if renewed_user:
+        # Persist new client id if present (for 3x-UI/X-UI recreate paths)
+        try:
+            new_cid = renewed_user.get('id') or renewed_user.get('uuid')
+            if new_cid:
+                execute_db("UPDATE orders SET xui_client_id = ? WHERE id = ?", (new_cid, order_id))
+        except Exception:
+            pass
         return True, "Success"
     try:
         from ..config import logger as _logger
