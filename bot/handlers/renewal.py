@@ -153,6 +153,22 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
             renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
         else:
             renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
+    elif panel_type in ('xui','x-ui','sanaei','alireza') and hasattr(api, 'renew_user_on_inbound'):
+        inbound_id = int(order.get('xui_inbound_id') or 0)
+        if inbound_id:
+            add_gb = 0.0
+            add_days = 0
+            try:
+                add_gb = float(plan.get('traffic_gb', 0))
+            except Exception:
+                add_gb = 0.0
+            try:
+                add_days = int(plan.get('duration_days', 0))
+            except Exception:
+                add_days = 0
+            renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
+        else:
+            renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
     else:
         renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
     if renewed_user:
