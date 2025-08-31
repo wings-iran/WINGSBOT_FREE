@@ -1091,7 +1091,7 @@ class ThreeXuiAPI(BasePanelAPI):
                 continue
         return None
 
-    def get_configs_for_user_on_inbound(self, inbound_id: int, username: str) -> list:
+    def get_configs_for_user_on_inbound(self, inbound_id: int, username: str, preferred_id: str = None) -> list:
         inbound = self._fetch_inbound_detail(inbound_id)
         if not inbound:
             return []
@@ -1102,10 +1102,13 @@ class ThreeXuiAPI(BasePanelAPI):
                 obj = json.loads(s) if isinstance(s, str) else (s or {})
             except Exception:
                 obj = {}
+            chosen = None
             for c in (obj.get('clients') or []):
-                if c.get('email') == username:
+                if preferred_id and (c.get('id') == preferred_id or c.get('uuid') == preferred_id):
                     return c
-            return None
+                if c.get('email') == username and chosen is None:
+                    chosen = c
+            return chosen
         client = _find_client(inbound)
         retries = 2
         while client is None and retries > 0:
@@ -1235,8 +1238,6 @@ class ThreeXuiAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
-                else:
-                    qs.append('security=none')
                 query = '&'.join(qs)
                 uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
                 configs.append(uri)
