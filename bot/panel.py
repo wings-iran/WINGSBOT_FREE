@@ -6,6 +6,7 @@ import re
 from urllib.parse import urlsplit
 from .config import logger
 from .db import query_db
+import time as _time
 
 
 class BasePanelAPI:
@@ -791,76 +792,37 @@ class ThreeXuiAPI(BasePanelAPI):
         inbound = self._fetch_inbound_detail(inbound_id)
         if not inbound:
             return []
-
-    def rotate_user_key(self, username: str) -> bool:
-        # Iterate inbounds, find client by email and rotate its credentials
-        inbounds, msg = self.list_inbounds()
-        if not inbounds:
-            return False
-        changed = False
-        for ib in inbounds:
-            inbound_id = ib.get('id')
+        # Retry a little to ensure client appears
+        def _find_client(inv):
+            s = inv.get('settings')
+            try:
+                obj = json.loads(s) if isinstance(s, str) else (s or {})
+            except Exception:
+                obj = {}
+            for c in (obj.get('clients') or []):
+                if c.get('email') == username:
+                    return c
+            return None
+        client = _find_client(inbound)
+        retries = 2
+        while client is None and retries > 0:
+            _time.sleep(0.7)
             inbound = self._fetch_inbound_detail(inbound_id)
             if not inbound:
-                continue
-            try:
-                import json as _json, uuid as _uuid, random as _rand, string as _str
-                settings_str = inbound.get('settings')
-                settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
-                clients = settings_obj.get('clients') or []
-                if not isinstance(clients, list):
-                    continue
-                proto = (inbound.get('protocol') or inbound.get('type') or '').lower()
-                for idx, c in enumerate(clients):
-                    if c.get('email') == username:
-                        updated = dict(c)
-                        # Rotate identity based on protocol
-                        if proto in ('vless','vmess'):
-                            updated['id'] = str(_uuid.uuid4())
-                        elif proto == 'trojan':
-                            updated['password'] = ''.join(_rand.choices(_str.ascii_letters + _str.digits, k=16))
-                        # Always rotate subId when present
-                        if 'subId' in updated:
-                            updated['subId'] = ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12))
-                        # Push update via API
-                        settings_payload = _json.dumps({"clients": [updated]})
-                        payload = {"id": int(inbound_id), "settings": settings_payload}
-                        for ep in [
-                            "/xui/api/inbounds/updateClient",
-                            "/panel/api/inbounds/updateClient",
-                            "/xui/api/inbound/updateClient",
-                        ]:
-                            try:
-                                resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
-                                if resp.status_code in (200, 201):
-                                    changed = True
-                                    break
-                            except requests.RequestException:
-                                continue
-                # continue checking other inbounds
-            except Exception:
-                continue
-        return changed
+                break
+            client = _find_client(inbound)
+            retries -= 1
+        if not client:
+            return []
         try:
-            import json as _json
             settings_str = inbound.get('settings')
-            settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
-            clients = settings_obj.get('clients') or []
-            client = None
-            for c in clients:
-                if c.get('email') == username:
-                    client = c
-                    break
-            if not client:
-                return []
+            settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
             proto = (inbound.get('protocol') or '').lower()
             port = inbound.get('port') or inbound.get('listen_port') or 0
-            # stream settings
             stream_raw = inbound.get('streamSettings') or inbound.get('stream_settings')
-            stream = _json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+            stream = json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
             network = (stream.get('network') or '').lower() or 'tcp'
             security = (stream.get('security') or '').lower() or ''
-            # tls/sni
             sni = ''
             if security == 'tls':
                 tls = stream.get('tlsSettings') or {}
@@ -868,7 +830,6 @@ class ThreeXuiAPI(BasePanelAPI):
             elif security == 'reality':
                 reality = stream.get('realitySettings') or {}
                 sni = (reality.get('serverNames') or [''])[0]
-            # ws/grpc
             path = ''
             host_header = ''
             service_name = ''
@@ -884,7 +845,6 @@ class ThreeXuiAPI(BasePanelAPI):
                 if (header.get('type') or '').lower() == 'http':
                     header_type = 'http'
                     req = header.get('request') or {}
-                    # path can be list or string
                     rp = req.get('path')
                     if isinstance(rp, list) and rp:
                         path = rp[0] or '/'
@@ -893,7 +853,6 @@ class ThreeXuiAPI(BasePanelAPI):
                     else:
                         path = '/'
                     h = req.get('headers') or {}
-                    # Host header may be list
                     hh = h.get('Host') or h.get('host') or ''
                     if isinstance(hh, list) and hh:
                         host_header = hh[0]
@@ -902,15 +861,11 @@ class ThreeXuiAPI(BasePanelAPI):
             if network == 'grpc':
                 grpc = stream.get('grpcSettings') or {}
                 service_name = grpc.get('serviceName') or ''
-            # host (domain)
             from urllib.parse import urlsplit as _us
-            # Prefer sub_base host if present; otherwise derive from base_url
             parts = _us(getattr(self, 'sub_base', '') or self.base_url)
             host = parts.hostname or ''
             if not host:
-                # Fallback: if inbound has SNIs/hosts, use them for host
                 host = host_header or sni or host
-            # client id/password
             uuid = client.get('id') or client.get('uuid') or ''
             passwd = client.get('password') or ''
             name = username
@@ -936,6 +891,8 @@ class ThreeXuiAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
                 flow = client.get('flow')
                 if flow:
                     qs.append(f'flow={flow}')
@@ -958,7 +915,7 @@ class ThreeXuiAPI(BasePanelAPI):
                     "sni": sni or ""
                 }
                 import base64 as _b64
-                b = _b64.b64encode(_json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                b = _b64.b64encode(json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
                 configs.append(f"vmess://{b}")
             elif proto == 'trojan' and passwd:
                 qs = []
@@ -975,6 +932,8 @@ class ThreeXuiAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
                 query = '&'.join(qs)
                 uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
                 configs.append(uri)
@@ -2035,6 +1994,196 @@ class MarzneshinAPI(BasePanelAPI):
             return new_username, (sub_link or None), "Success"
         except requests.RequestException as e:
             return None, None, str(e)
+
+    def rotate_user_key(self, username: str) -> bool:
+        # Iterate inbounds, find client by email and rotate its credentials
+        inbounds, msg = self.list_inbounds()
+        if not inbounds:
+            return False
+        changed = False
+        for ib in inbounds:
+            inbound_id = ib.get('id')
+            inbound = self._fetch_inbound_detail(inbound_id)
+            if not inbound:
+                continue
+            try:
+                import json as _json, uuid as _uuid, random as _rand, string as _str
+                settings_str = inbound.get('settings')
+                settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+                clients = settings_obj.get('clients') or []
+                if not isinstance(clients, list):
+                    continue
+                proto = (inbound.get('protocol') or inbound.get('type') or '').lower()
+                for idx, c in enumerate(clients):
+                    if c.get('email') == username:
+                        updated = dict(c)
+                        # Rotate identity based on protocol
+                        if proto in ('vless','vmess'):
+                            updated['id'] = str(_uuid.uuid4())
+                        elif proto == 'trojan':
+                            updated['password'] = ''.join(_rand.choices(_str.ascii_letters + _str.digits, k=16))
+                        # Always rotate subId when present
+                        if 'subId' in updated:
+                            updated['subId'] = ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12))
+                        # Push update via API
+                        settings_payload = _json.dumps({"clients": [updated]})
+                        payload = {"id": int(inbound_id), "settings": settings_payload}
+                        for ep in [
+                            "/xui/api/inbounds/updateClient",
+                            "/panel/api/inbounds/updateClient",
+                            "/xui/api/inbound/updateClient",
+                        ]:
+                            try:
+                                resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
+                                if resp.status_code in (200, 201):
+                                    changed = True
+                                    break
+                            except requests.RequestException:
+                                continue
+                # continue checking other inbounds
+            except Exception:
+                continue
+        return changed
+        try:
+            import json as _json
+            settings_str = inbound.get('settings')
+            settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            clients = settings_obj.get('clients') or []
+            client = None
+            for c in clients:
+                if c.get('email') == username:
+                    client = c
+                    break
+            if not client:
+                return []
+            proto = (inbound.get('protocol') or '').lower()
+            port = inbound.get('port') or inbound.get('listen_port') or 0
+            # stream settings
+            stream_raw = inbound.get('streamSettings') or inbound.get('stream_settings')
+            stream = _json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+            network = (stream.get('network') or '').lower() or 'tcp'
+            security = (stream.get('security') or '').lower() or ''
+            # tls/sni
+            sni = ''
+            if security == 'tls':
+                tls = stream.get('tlsSettings') or {}
+                sni = tls.get('serverName') or ''
+            elif security == 'reality':
+                reality = stream.get('realitySettings') or {}
+                sni = (reality.get('serverNames') or [''])[0]
+            # ws/grpc
+            path = ''
+            host_header = ''
+            service_name = ''
+            header_type = ''
+            if network == 'ws':
+                ws = stream.get('wsSettings') or {}
+                path = ws.get('path') or '/'
+                headers = ws.get('headers') or {}
+                host_header = headers.get('Host') or headers.get('host') or ''
+            elif network == 'tcp':
+                tcp = stream.get('tcpSettings') or {}
+                header = tcp.get('header') or {}
+                if (header.get('type') or '').lower() == 'http':
+                    header_type = 'http'
+                    req = header.get('request') or {}
+                    # path can be list or string
+                    rp = req.get('path')
+                    if isinstance(rp, list) and rp:
+                        path = rp[0] or '/'
+                    elif isinstance(rp, str) and rp:
+                        path = rp
+                    else:
+                        path = '/'
+                    h = req.get('headers') or {}
+                    # Host header may be list
+                    hh = h.get('Host') or h.get('host') or ''
+                    if isinstance(hh, list) and hh:
+                        host_header = hh[0]
+                    elif isinstance(hh, str):
+                        host_header = hh
+            if network == 'grpc':
+                grpc = stream.get('grpcSettings') or {}
+                service_name = grpc.get('serviceName') or ''
+            # host (domain)
+            from urllib.parse import urlsplit as _us
+            # Prefer sub_base host if present; otherwise derive from base_url
+            parts = _us(getattr(self, 'sub_base', '') or self.base_url)
+            host = parts.hostname or ''
+            if not host:
+                # Fallback: if inbound has SNIs/hosts, use them for host
+                host = host_header or sni or host
+            # client id/password
+            uuid = client.get('id') or client.get('uuid') or ''
+            passwd = client.get('password') or ''
+            name = username
+            configs = []
+            if proto == 'vless' and uuid:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'tcp' and header_type == 'http':
+                    qs.append('headerType=http')
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                flow = client.get('flow')
+                if flow:
+                    qs.append(f'flow={flow}')
+                query = '&'.join(qs)
+                uri = f"vless://{uuid}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            elif proto == 'vmess' and uuid:
+                vm = {
+                    "v": "2",
+                    "ps": name,
+                    "add": host,
+                    "port": str(port),
+                    "id": uuid,
+                    "aid": "0",
+                    "net": network,
+                    "type": "none",
+                    "host": host_header or sni or host,
+                    "path": path or "/",
+                    "tls": "tls" if security in ("tls","reality") else "",
+                    "sni": sni or ""
+                }
+                import base64 as _b64
+                b = _b64.b64encode(_json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                configs.append(f"vmess://{b}")
+            elif proto == 'trojan' and passwd:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                query = '&'.join(qs)
+                uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            return configs
+        except Exception:
+            return []
 
 
 def VpnPanelAPI(panel_id: int) -> BasePanelAPI:
