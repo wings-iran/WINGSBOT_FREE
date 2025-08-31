@@ -325,7 +325,7 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await query.answer("اطلاعات سرویس ناقص است", show_alert=True)
         return ConversationHandler.END
     panel_api = VpnPanelAPI(panel_id=order['panel_id'])
-    # Marzneshin or Marzban
+    # Marzneshin or Marzban or 3x-UI
     try:
         import requests as _rq
         # Try to ensure token if available
@@ -345,6 +345,12 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             ok = (r.status_code in (200, 201, 202, 204))
         except Exception:
             ok = False
+        # 3x-UI rotate
+        if not ok and hasattr(panel_api, 'rotate_user_key'):
+            try:
+                ok = bool(panel_api.rotate_user_key(order['marzban_username']))
+            except Exception:
+                ok = False
         # Marzban fallback
         if not ok and hasattr(panel_api, 'revoke_subscription'):
             try:

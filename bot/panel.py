@@ -789,6 +789,56 @@ class ThreeXuiAPI(BasePanelAPI):
         inbound = self._fetch_inbound_detail(inbound_id)
         if not inbound:
             return []
+
+    def rotate_user_key(self, username: str) -> bool:
+        # Iterate inbounds, find client by email and rotate its credentials
+        inbounds, msg = self.list_inbounds()
+        if not inbounds:
+            return False
+        changed = False
+        for ib in inbounds:
+            inbound_id = ib.get('id')
+            inbound = self._fetch_inbound_detail(inbound_id)
+            if not inbound:
+                continue
+            try:
+                import json as _json, uuid as _uuid, random as _rand, string as _str
+                settings_str = inbound.get('settings')
+                settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+                clients = settings_obj.get('clients') or []
+                if not isinstance(clients, list):
+                    continue
+                proto = (inbound.get('protocol') or inbound.get('type') or '').lower()
+                for idx, c in enumerate(clients):
+                    if c.get('email') == username:
+                        updated = dict(c)
+                        # Rotate identity based on protocol
+                        if proto in ('vless','vmess'):
+                            updated['id'] = str(_uuid.uuid4())
+                        elif proto == 'trojan':
+                            updated['password'] = ''.join(_rand.choices(_str.ascii_letters + _str.digits, k=16))
+                        # Always rotate subId when present
+                        if 'subId' in updated:
+                            updated['subId'] = ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12))
+                        # Push update via API
+                        settings_payload = _json.dumps({"clients": [updated]})
+                        payload = {"id": int(inbound_id), "settings": settings_payload}
+                        for ep in [
+                            "/xui/api/inbounds/updateClient",
+                            "/panel/api/inbounds/updateClient",
+                            "/xui/api/inbound/updateClient",
+                        ]:
+                            try:
+                                resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
+                                if resp.status_code in (200, 201):
+                                    changed = True
+                                    break
+                            except requests.RequestException:
+                                continue
+                # continue checking other inbounds
+            except Exception:
+                continue
+        return changed
         try:
             import json as _json
             settings_str = inbound.get('settings')
