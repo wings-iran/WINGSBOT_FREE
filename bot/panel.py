@@ -256,14 +256,26 @@ class XuiAPI(BasePanelAPI):
 
     def get_token(self):
         try:
+            # Try JSON login first
             resp = self.session.post(
                 f"{self.base_url}/login",
                 json={"username": self.username, "password": self.password},
                 headers=self._json_headers,
                 timeout=12,
             )
-            resp.raise_for_status()
-            return True
+            if resp.status_code == 200:
+                return True
+            # Fallback: form-encoded login (some X-UI builds require this)
+            resp2 = self.session.post(
+                f"{self.base_url}/login",
+                data={"username": self.username, "password": self.password},
+                headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+                timeout=12,
+            )
+            if resp2.status_code == 200:
+                return True
+            logger.error(f"X-UI login non-200: {resp.status_code} then {resp2.status_code}")
+            return False
         except requests.RequestException as e:
             logger.error(f"X-UI login error: {e}")
             return False
@@ -272,31 +284,71 @@ class XuiAPI(BasePanelAPI):
         if not self.get_token():
             return None, "خطا در ورود به پنل X-UI"
         try:
-            resp = self.session.get(
+            endpoints = [
                 f"{self.base_url}/xui/API/inbounds/",
-                headers={'Accept': 'application/json'},
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                return None, f"HTTP {resp.status_code}"
-            data = resp.json()
-            items = data.get('obj') if isinstance(data, dict) else data
-            if not isinstance(items, list):
-                return None, "لیست اینباند نامعتبر است"
-            inbounds = []
-            for it in items:
-                inbounds.append({
-                    'id': it.get('id'),
-                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                    'port': it.get('port') or it.get('listen_port') or 0,
-                })
-            return inbounds, "Success"
+                f"{self.base_url}/panel/API/inbounds/",
+                f"{self.base_url}/xui/api/inbounds/list",
+                f"{self.base_url}/xui/api/inbounds",
+                f"{self.base_url}/panel/api/inbounds/list",
+                f"{self.base_url}/panel/api/inbounds",
+            ]
+            last_error = None
+            for attempt in range(2):
+                for url in endpoints:
+                    try:
+                        resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
+                    except requests.RequestException as re:
+                        last_error = str(re)
+                        continue
+                    if resp.status_code != 200:
+                        last_error = f"HTTP {resp.status_code} @ {url}"
+                        continue
+                    ctype = (resp.headers.get('content-type') or '').lower()
+                    body = resp.text or ''
+                    if ('application/json' not in ctype) and not (body.strip().startswith('{') or body.strip().startswith('[')):
+                        last_error = f"پاسخ JSON معتبر نیست @ {url}"
+                        continue
+                    try:
+                        data = resp.json()
+                    except ValueError as ve:
+                        last_error = f"JSON parse error @ {url}: {ve}"
+                        continue
+                    items = None
+                    if isinstance(data, list):
+                        items = data
+                    elif isinstance(data, dict):
+                        items = data.get('obj') if isinstance(data.get('obj'), list) else None
+                        if items is None:
+                            for _, v in data.items():
+                                if isinstance(v, list):
+                                    items = v
+                                    break
+                    if not isinstance(items, list):
+                        last_error = f"ساختار JSON لیست اینباند قابل تشخیص نیست @ {url}"
+                        continue
+                    inbounds = []
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        inbounds.append({
+                            'id': it.get('id'),
+                            'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                            'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                            'port': it.get('port') or it.get('listen_port') or 0,
+                        })
+                    return inbounds, "Success"
+                if attempt == 0:
+                    # re-login and retry once
+                    self.get_token()
+            if last_error:
+                logger.error(f"X-UI list_inbounds error: {last_error}")
+                return None, last_error
+            return None, "Unknown"
         except requests.RequestException as e:
             logger.error(f"X-UI list_inbounds error: {e}")
             return None, str(e)
         except ValueError as ve:
-            logger.error(f"X-UI JSON parse error for /xui/API/inbounds/: {ve}")
+            logger.error(f"X-UI JSON parse error while listing inbounds: {ve}")
             return None, "JSON parse error"
 
     def create_user_on_inbound(self, inbound_id: int, user_id: int, plan):
@@ -317,27 +369,91 @@ class XuiAPI(BasePanelAPI):
             except Exception:
                 expiry_ms = 0
 
-            settings = json.dumps({
-                "clients": [{
-                    "id": str(uuid.uuid4()),
-                    "email": new_username,
-                    "totalGB": total_bytes,
-                    "expiryTime": expiry_ms,
-                    "enable": True,
-                    "limitIp": 0,
-                    "subId": subid,
-                    "reset": 0
-                }]
-            })
-            payload = {"id": int(inbound_id), "settings": settings}
-            resp = self.session.post(
+            client_obj = {
+                "id": str(uuid.uuid4()),
+                "email": new_username,
+                "totalGB": total_bytes,
+                "expiryTime": expiry_ms,
+                "enable": True,
+                "limitIp": 0,
+                "subId": subid,
+                "reset": 0
+            }
+
+            def _is_success(json_obj):
+                if not isinstance(json_obj, dict):
+                    return False
+                if json_obj.get('success') is True:
+                    return True
+                status_val = str(json_obj.get('status', '')).lower()
+                if status_val in ('ok', 'success', '200'):
+                    return True
+                code_val = str(json_obj.get('code', ''))
+                if code_val.startswith('2'):
+                    return True
+                msg_val = json_obj.get('msg') or json_obj.get('message') or ''
+                if isinstance(msg_val, str) and ('success' in msg_val.lower() or 'ok' in msg_val.lower()):
+                    return True
+                return False
+
+            endpoints = [
                 f"{self.base_url}/xui/API/inbounds/addClient",
-                headers={'Content-Type': 'application/json'},
-                json=payload,
-                timeout=15,
-            )
-            if resp.status_code not in (200, 201):
-                return None, None, f"HTTP {resp.status_code}: {resp.text[:120]}"
+                f"{self.base_url}/panel/API/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbounds/addClient",
+                f"{self.base_url}/panel/api/inbounds/addClient",
+            ]
+
+            last_preview = None
+            for ep in endpoints:
+                # 1) clients array JSON
+                payload1 = {"id": int(inbound_id), "clients": [client_obj]}
+                r1 = self.session.post(ep, headers=self._json_headers, json=payload1, timeout=15)
+                if r1.status_code in (200, 201):
+                    try:
+                        j1 = r1.json()
+                    except ValueError:
+                        j1 = {}
+                    if _is_success(j1):
+                        chosen_ep = ep
+                        break
+                    last_preview = f"endpoint={ep} form=clients preview={(r1.text or '')[:200]}"
+                else:
+                    last_preview = f"endpoint={ep} form=clients HTTP {r1.status_code}: {(r1.text or '')[:200]}"
+                # 2) settings JSON string
+                settings_obj = {"clients": [client_obj]}
+                payload2 = {"id": int(inbound_id), "settings": json.dumps(settings_obj)}
+                r2 = self.session.post(ep, headers=self._json_headers, json=payload2, timeout=15)
+                if r2.status_code in (200, 201):
+                    try:
+                        j2 = r2.json()
+                    except ValueError:
+                        j2 = {}
+                    if _is_success(j2):
+                        chosen_ep = ep
+                        break
+                    last_preview = f"endpoint={ep} form=settings preview={(r2.text or '')[:200]}"
+                else:
+                    last_preview = f"endpoint={ep} form=settings HTTP {r2.status_code}: {(r2.text or '')[:200]}"
+                # 3) form-urlencoded with settings
+                form_headers = {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                }
+                r3 = self.session.post(ep, headers=form_headers, data={'id': str(int(inbound_id)), 'settings': json.dumps(settings_obj)}, timeout=15)
+                if r3.status_code in (200, 201):
+                    try:
+                        j3 = r3.json()
+                    except ValueError:
+                        j3 = {}
+                    if _is_success(j3):
+                        chosen_ep = ep
+                        break
+                    last_preview = f"endpoint={ep} form=form preview={(r3.text or '')[:200]}"
+                else:
+                    last_preview = f"endpoint={ep} form=form HTTP {r3.status_code}: {(r3.text or '')[:200]}"
+            else:
+                return None, None, f"API failure: {last_preview or 'unknown'}"
+
             if self.sub_base:
                 origin = self.sub_base
             else:
