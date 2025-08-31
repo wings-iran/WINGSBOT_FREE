@@ -190,7 +190,15 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
             f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
         )
         try:
-            await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+            # Try sending QR code if it's a single link and not too long
+            try:
+                import io, qrcode
+                qr_buf = io.BytesIO()
+                qrcode.make(config_link).save(qr_buf, format='PNG')
+                qr_buf.seek(0)
+                await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=user_message, parse_mode=ParseMode.HTML)
+            except Exception:
+                await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
             done_text = base_text + f"\n\n\u2705 **ارسال خودکار موفق بود.**"
             if is_media:
                 await _safe_edit_caption(query.message, done_text, parse_mode=ParseMode.HTML, reply_markup=None)
