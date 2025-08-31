@@ -958,7 +958,7 @@ class ThreeXuiAPI(BasePanelAPI):
             clients = settings_obj.get('clients') or []
             if not isinstance(clients, list):
                 return None, "ساختار کلاینت‌ها نامعتبر است"
-            updated = None; idx = -1
+            updated = None; idx = -1; old_uuid = None
             for i, c in enumerate(clients):
                 if c.get('email') == username:
                     add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
@@ -967,7 +967,7 @@ class ThreeXuiAPI(BasePanelAPI):
                     base = max(current_exp, now_ms)
                     target_exp = base + add_ms if add_ms > 0 else current_exp
                     new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
-                    updated = dict(c); idx = i
+                    updated = dict(c); idx = i; old_uuid = c.get('id') or c.get('uuid') or None
                     updated['expiryTime'] = target_exp
                     updated['totalGB'] = new_total
                     break
@@ -981,13 +981,18 @@ class ThreeXuiAPI(BasePanelAPI):
             payload_settings = _json.dumps(settings_obj)
             payload = {"id": int(inbound_id), "settings": payload_settings}
             # Try multiple endpoints
-            endpoints = [
+            base_endpoints = [
                 "/xui/API/inbounds/updateClient",
                 "/panel/API/inbounds/updateClient",
                 "/xui/api/inbounds/updateClient",
                 "/panel/api/inbounds/updateClient",
                 "/xui/api/inbound/updateClient",
             ]
+            endpoints = list(base_endpoints)
+            if old_uuid:
+                for be in base_endpoints:
+                    if be.endswith('updateClient'):
+                        endpoints.append(f"{be}/{old_uuid}")
             for ep in endpoints:
                 try:
                     r = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
@@ -2282,10 +2287,11 @@ class MarzneshinAPI(BasePanelAPI):
             if not isinstance(clients, list):
                 return None
             proto = (inbound.get('protocol') or inbound.get('type') or '').lower()
-            updated = None; idx = -1
+            updated = None; idx = -1; old_uuid = None
             for i, c in enumerate(clients):
                 if c.get('email') == username:
                     updated = dict(c); idx = i
+                    old_uuid = c.get('id') or c.get('uuid') or None
                     if proto in ('vless','vmess'):
                         updated['id'] = str(_uuid.uuid4())
                     elif proto == 'trojan':
@@ -2305,13 +2311,18 @@ class MarzneshinAPI(BasePanelAPI):
             settings_payload = _json.dumps(full_settings)
             json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
             form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
-            endpoints = [
+            base_endpoints = [
                 "/xui/API/inbounds/updateClient",
                 "/panel/API/inbounds/updateClient",
                 "/xui/api/inbounds/updateClient",
                 "/panel/api/inbounds/updateClient",
                 "/xui/api/inbound/updateClient",
             ]
+            endpoints = list(base_endpoints)
+            if old_uuid:
+                for be in base_endpoints:
+                    if be.endswith('updateClient'):
+                        endpoints.append(f"{be}/{old_uuid}")
             # Try multiple formats per endpoint
             for ep in endpoints:
                 try:
