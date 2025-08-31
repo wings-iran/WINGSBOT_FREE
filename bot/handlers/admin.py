@@ -273,7 +273,7 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         return
 
-    # Directly send URL (config) to user without QR flow
+    # Directly send URL (config) to user; for 3x-UI also try sending direct configs
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
     execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
     if order.get('discount_code'):
@@ -283,7 +283,18 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
                     f"<b>پلن:</b> {plan['name']}\n"
                     f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or ''))
     try:
-        await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+        sent = False
+        if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'get_configs_for_user_on_inbound'):
+            try:
+                confs = api.get_configs_for_user_on_inbound(inbound_id, username)
+                if confs:
+                    cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
+                    await context.bot.send_message(order['user_id'], user_message + "\n\n" + cfg_text, parse_mode=ParseMode.HTML)
+                    sent = True
+            except Exception:
+                sent = False
+        if not sent:
+            await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
         ok_text = base_text + f"\n\n\u2705 **ارسال لینک با موفقیت انجام شد.**"
         if is_media:
             await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=None)
