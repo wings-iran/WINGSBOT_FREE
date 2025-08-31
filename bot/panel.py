@@ -902,11 +902,12 @@ class ThreeXuiAPI(BasePanelAPI):
                 service_name = grpc.get('serviceName') or ''
             # host (domain)
             from urllib.parse import urlsplit as _us
-            if getattr(self, 'sub_base', ''):
-                parts = _us(self.sub_base)
-            else:
-                parts = _us(self.base_url)
+            # Prefer sub_base host if present; otherwise derive from base_url
+            parts = _us(getattr(self, 'sub_base', '') or self.base_url)
             host = parts.hostname or ''
+            if not host:
+                # Fallback: if inbound has SNIs/hosts, use them for host
+                host = host_header or sni or host
             # client id/password
             uuid = client.get('id') or client.get('uuid') or ''
             passwd = client.get('password') or ''
