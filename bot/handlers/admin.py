@@ -276,12 +276,12 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
 
-    # Build message body; for 3x-UI we won't include sub link
+    # Build message body; for 3x-UI and X-UI we won't include sub link
     user_message = (f"✅ سفارش شما تایید شد!\n\n"
                     f"<b>پلن:</b> {plan['name']}\n" + (("\n" + (query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')))
     try:
         sent = False
-        if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'get_configs_for_user_on_inbound'):
+        if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(api, 'get_configs_for_user_on_inbound'):
             try:
                 confs = api.get_configs_for_user_on_inbound(inbound_id, username)
                 if confs:
@@ -299,8 +299,8 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             except Exception:
                 sent = False
         if not sent:
-            # If 3x-UI and configs failed, do NOT send sub link; send message only
-            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui'):
+            # If 3x-UI/X-UI and configs failed, do NOT send sub link; send message only
+            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza'):
                 await context.bot.send_message(order['user_id'], user_message + "\n\nکانفیگی یافت نشد. از مدیریت بخواهید دکمه 'دریافت لینک مجدد' را بزنید.", parse_mode=ParseMode.HTML)
             else:
                 # For other panels, fallback to link+QR
