@@ -438,9 +438,9 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 return ConversationHandler.END
             # Build and send new config (3x-UI path builder differs; for X-UI we may send sub link or raw config if available)
             try:
-                # Try to reuse 3x-UI config builder if present (compatible enough when inbounds have similar schema)
+                # Try to reuse X-UI/3x-UI config builder with preferred new id
                 if hasattr(panel_api, 'get_configs_for_user_on_inbound'):
-                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username'], preferred_id=(new_client.get('id') or new_client.get('uuid'))) or []
                     if confs:
                         cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
                         if qrcode:
@@ -449,7 +449,9 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                                 await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
                             except Exception:
                                 await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
-                            return ConversationHandler.END
+                        else:
+                            await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                        return ConversationHandler.END
                 # Fallback to user info/sub link
                 info, _m = await panel_api.get_user(order['marzban_username'])
                 sub = (info.get('subscription_url') if info else '') or ''
