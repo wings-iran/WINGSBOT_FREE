@@ -302,15 +302,19 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             except Exception:
                 sent = False
         if not sent:
-            # Non 3x-UI or failed to build configs: fallback to link+QR flow
-            try:
-                import io, qrcode
-                qr_buf = io.BytesIO()
-                qrcode.make(sub_link).save(qr_buf, format='PNG')
-                qr_buf.seek(0)
-                await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=(user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
-            except Exception:
-                await context.bot.send_message(order['user_id'], (user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
+            # If 3x-UI, do NOT send sub link; send message only
+            if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui'):
+                await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+            else:
+                # For other panels, fallback to link+QR
+                try:
+                    import io, qrcode
+                    qr_buf = io.BytesIO()
+                    qrcode.make(sub_link).save(qr_buf, format='PNG')
+                    qr_buf.seek(0)
+                    await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=(user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
+                except Exception:
+                    await context.bot.send_message(order['user_id'], (user_message + f"\n\n<code>{sub_link}</code>"), parse_mode=ParseMode.HTML)
         ok_text = base_text + f"\n\n\u2705 **ارسال لینک با موفقیت انجام شد.**"
         if is_media:
             await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=None)
