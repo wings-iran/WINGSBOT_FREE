@@ -2050,6 +2050,29 @@ class TxUiAPI(BasePanelAPI):
         }
 
     def get_token(self):
+        # Try form login first (more compatible across deployments)
+        try:
+            try:
+                self.session.get(f"{self.base_url}/login", timeout=8)
+            except requests.RequestException:
+                pass
+            form_headers = {
+                'Accept': 'text/html,application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+            resp = self.session.post(
+                f"{self.base_url}/login",
+                data={"username": self.username, "password": self.password},
+                headers=form_headers,
+                allow_redirects=False,
+                timeout=12,
+            )
+            if resp.status_code in (200, 204, 302, 303):
+                return True
+        except requests.RequestException:
+            pass
+        # Fallback to JSON login
         try:
             resp = self.session.post(
                 f"{self.base_url}/login",
@@ -2057,11 +2080,11 @@ class TxUiAPI(BasePanelAPI):
                 headers=self._json_headers,
                 timeout=12,
             )
-            resp.raise_for_status()
-            return True
+            if resp.status_code in (200, 204, 302, 303):
+                return True
         except requests.RequestException as e:
             logger.error(f"TX-UI login error: {e}")
-            return False
+        return False
 
     def list_inbounds(self):
         if not self.get_token():
@@ -2069,9 +2092,17 @@ class TxUiAPI(BasePanelAPI):
         try:
             endpoints = [
                 f"{self.base_url}/tx/api/inbounds/list",
+                f"{self.base_url}/tx/API/inbounds/list",
                 f"{self.base_url}/xui/api/inbounds/list",
+                f"{self.base_url}/xui/API/inbounds/list",
+                f"{self.base_url}/panel/api/inbounds/list",
+                f"{self.base_url}/panel/API/inbounds/list",
                 f"{self.base_url}/tx/api/inbounds",
+                f"{self.base_url}/tx/API/inbounds",
                 f"{self.base_url}/xui/api/inbounds",
+                f"{self.base_url}/xui/API/inbounds",
+                f"{self.base_url}/panel/api/inbounds",
+                f"{self.base_url}/panel/API/inbounds",
             ]
             last_error = None
             for attempt in range(2):
@@ -2171,8 +2202,15 @@ class TxUiAPI(BasePanelAPI):
 
             endpoints = [
                 f"{self.base_url}/tx/api/inbounds/addClient",
+                f"{self.base_url}/tx/API/inbounds/addClient",
+                f"{self.base_url}/tx/api/inbound/addClient",
+                f"{self.base_url}/tx/API/inbound/addClient",
                 f"{self.base_url}/xui/api/inbounds/addClient",
+                f"{self.base_url}/xui/API/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbound/addClient",
+                f"{self.base_url}/xui/API/inbound/addClient",
                 f"{self.base_url}/panel/api/inbounds/addClient",
+                f"{self.base_url}/panel/API/inbounds/addClient",
             ]
 
             last_preview = None
@@ -2289,8 +2327,15 @@ class TxUiAPI(BasePanelAPI):
     def _fetch_inbound_detail(self, inbound_id: int):
         paths = [
             f"/tx/api/inbounds/get/{inbound_id}",
+            f"/tx/API/inbounds/get/{inbound_id}",
+            f"/tx/api/inbound/get/{inbound_id}",
+            f"/tx/API/inbound/get/{inbound_id}",
             f"/xui/api/inbounds/get/{inbound_id}",
+            f"/xui/API/inbounds/get/{inbound_id}",
+            f"/xui/api/inbound/get/{inbound_id}",
+            f"/xui/API/inbound/get/{inbound_id}",
             f"/panel/api/inbounds/get/{inbound_id}",
+            f"/panel/API/inbounds/get/{inbound_id}",
         ]
         for p in paths:
             try:
@@ -2347,7 +2392,18 @@ class TxUiAPI(BasePanelAPI):
                     updated['totalGB'] = new_total
                     settings_payload = json.dumps({"clients": [updated]})
                     payload = {"id": int(inbound_id), "settings": settings_payload}
-                    for up in ["/tx/api/inbounds/updateClient", "/xui/api/inbounds/updateClient", "/panel/api/inbounds/updateClient"]:
+                    for up in [
+                        "/tx/api/inbounds/updateClient",
+                        "/tx/API/inbounds/updateClient",
+                        "/tx/api/inbound/updateClient",
+                        "/tx/API/inbound/updateClient",
+                        "/xui/api/inbounds/updateClient",
+                        "/xui/API/inbounds/updateClient",
+                        "/xui/api/inbound/updateClient",
+                        "/xui/API/inbound/updateClient",
+                        "/panel/api/inbounds/updateClient",
+                        "/panel/API/inbounds/updateClient",
+                    ]:
                         try:
                             resp = self.session.post(f"{self.base_url}{up}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
                             if resp.status_code in (200, 201):
