@@ -546,11 +546,9 @@ class XuiAPI(BasePanelAPI):
             if network == 'grpc':
                 grpc = stream.get('grpcSettings') or {}
                 service_name = grpc.get('serviceName') or ''
-            # host
+            # host (prefer SNI/Host header over panel host)
             parts = urlsplit(getattr(self, 'sub_base', '') or self.base_url)
-            host = parts.hostname or ''
-            if not host:
-                host = host_header or sni or host
+            host = host_header or sni or (parts.hostname or '')
             uuid_val = client.get('id') or client.get('uuid') or ''
             passwd = client.get('password') or ''
             name = username
@@ -576,6 +574,20 @@ class XuiAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
+                    if security == 'reality':
+                        # add Reality extras if present
+                        try:
+                            pbk = (reality.get('publicKey') or '').strip()
+                            sid = (reality.get('shortId') or '').strip()
+                            spx = (reality.get('spiderX') or '').strip()
+                            if pbk:
+                                qs.append(f'pbk={pbk}')
+                            if sid:
+                                qs.append(f'sid={sid}')
+                            if spx:
+                                qs.append(f'spx={spx}')
+                        except Exception:
+                            pass
                 else:
                     qs.append('security=none')
                 flow = client.get('flow')
