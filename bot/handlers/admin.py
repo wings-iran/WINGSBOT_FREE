@@ -275,7 +275,7 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
 
     # Directly send URL (config) to user; for 3x-UI also try sending direct configs
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
-    execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
+    execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ?, xui_inbound_id = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), int(inbound_id), order_id))
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
 

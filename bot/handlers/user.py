@@ -211,11 +211,15 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         link_label = "\U0001F517 کانفیگ‌ها:"
         link_value = "کانفیگی یافت نشد. دکمه ‘دریافت لینک مجدد’ را بزنید تا ساخته شود."
         try:
-            inbounds, _m = panel_api.list_inbounds()
+            ib_id = None
+            if order.get('xui_inbound_id'):
+                ib_id = int(order['xui_inbound_id'])
+            else:
+                inbounds, _m = panel_api.list_inbounds()
+                if inbounds:
+                    ib_id = inbounds[0].get('id')
             confs = []
-            if inbounds:
-                # Use first inbound to build configs
-                ib_id = inbounds[0].get('id')
+            if ib_id is not None:
                 confs = panel_api.get_configs_for_user_on_inbound(ib_id, marzban_username) or []
             if confs:
                 link_value = "\n".join(f"<code>{c}</code>" for c in confs)
@@ -269,11 +273,16 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
     # For 3x-UI: build configs instead of sub link
     if panel_type in ('3xui','3x-ui','3x ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
         try:
-            inbounds, _m = panel_api.list_inbounds()
-            if not inbounds:
+            ib_id = None
+            if order.get('xui_inbound_id'):
+                ib_id = int(order['xui_inbound_id'])
+            else:
+                inbounds, _m = panel_api.list_inbounds()
+                if inbounds:
+                    ib_id = inbounds[0].get('id')
+            if ib_id is None:
                 await query.answer("اینباندی یافت نشد", show_alert=True)
                 return ConversationHandler.END
-            ib_id = inbounds[0].get('id')
             confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
             if not confs:
                 await query.answer("ساخت کانفیگ ناموفق بود", show_alert=True)

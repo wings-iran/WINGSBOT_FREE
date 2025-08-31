@@ -212,6 +212,11 @@ def db_setup():
                     cursor.execute("ALTER TABLE orders ADD COLUMN last_link TEXT")
                 except sqlite3.Error:
                     pass
+            if 'xui_inbound_id' not in columns:
+                try:
+                    cursor.execute("ALTER TABLE orders ADD COLUMN xui_inbound_id INTEGER")
+                except sqlite3.Error:
+                    pass
         else:
             cursor.execute(
                 """
@@ -219,7 +224,7 @@ def db_setup():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, plan_id INTEGER NOT NULL,
                     status TEXT DEFAULT 'pending', marzban_username TEXT, screenshot_file_id TEXT, timestamp TEXT,
                     panel_id INTEGER, discount_code TEXT, final_price INTEGER, last_reminder_date TEXT, panel_type TEXT,
-                    last_link TEXT
+                    last_link TEXT, xui_inbound_id INTEGER
                 )
                 """
             )
