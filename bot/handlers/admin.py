@@ -5,6 +5,8 @@ import sqlite3
 from datetime import datetime
 import base64
 import requests
+import json as _json
+from urllib.parse import urlsplit, quote as _urlquote
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError, Forbidden, BadRequest
@@ -85,6 +87,137 @@ def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list
         return configs
     except Exception as e:
         logger.error(f"Failed to fetch/parse subscription from {sub_url}: {e}")
+        return []
+
+def _infer_origin_host(panel_row: dict) -> str:
+    try:
+        base = (panel_row.get('sub_base') or panel_row.get('url') or '').strip()
+        if not base:
+            return ''
+        parts = urlsplit(base)
+        return parts.hostname or ''
+    except Exception:
+        return ''
+
+def _build_configs_from_inbound(inbound: dict, username: str, panel_row: dict) -> list[str]:
+    """Construct one or more config URIs (vless/vmess) for the created client, using inbound settings.
+
+    This avoids relying on subscription fetches for X-UI-like panels.
+    """
+    try:
+        settings_str = inbound.get('settings')
+        try:
+            settings = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+        except Exception:
+            settings = {}
+        clients = settings.get('clients') or []
+        if not isinstance(clients, list):
+            return []
+        client = None
+        for c in clients:
+            if c.get('email') == username:
+                client = c
+                break
+        if not client:
+            return []
+
+        protocol = (inbound.get('protocol') or '').lower()
+        port = inbound.get('port') or inbound.get('listen_port') or 0
+        remark = inbound.get('remark') or inbound.get('tag') or username
+
+        stream = {}
+        try:
+            stream = _json.loads(inbound.get('streamSettings')) if isinstance(inbound.get('streamSettings'), str) else (inbound.get('streamSettings') or {})
+        except Exception:
+            stream = inbound.get('streamSettings') or {}
+
+        network = (stream.get('network') or 'tcp').lower()
+        security = (stream.get('security') or 'none').lower()
+        tls_obj = stream.get('tlsSettings') or {}
+        reality_obj = stream.get('realitySettings') or {}
+        ws_obj = stream.get('wsSettings') or {}
+        grpc_obj = stream.get('grpcSettings') or {}
+
+        host = _infer_origin_host(panel_row) or (urlsplit(panel_row.get('url','')).hostname or '')
+        if not host:
+            return []
+
+        def _build_vless() -> str:
+            uuid = client.get('id') or client.get('uuid') or ''
+            if not uuid:
+                return ''
+            params = ["encryption=none"]
+            # stream params
+            if network == 'ws':
+                path = ws_obj.get('path') or '/'
+                host_header = (ws_obj.get('headers') or {}).get('Host') or host
+                params += [f"type=ws", f"path={_urlquote(path)}", f"host={_urlquote(host_header)}"]
+            elif network == 'grpc':
+                service = grpc_obj.get('serviceName') or ''
+                if service:
+                    params += ["type=grpc", f"serviceName={_urlquote(service)}", "mode=gun"]
+            else:
+                params += [f"type={network}"]
+            # security
+            if security in ('tls', 'xtls'):
+                sni = tls_obj.get('serverName') or host
+                alpn = tls_obj.get('alpn')
+                params += ["security=tls", f"sni={_urlquote(sni)}"]
+                if isinstance(alpn, list) and alpn:
+                    params.append(f"alpn={_urlquote(','.join(alpn))}")
+                params.append("fp=chrome")
+            elif security == 'reality':
+                sni = (reality_obj.get('serverNames') or [host])[0]
+                pbk = reality_obj.get('publicKey') or ''
+                sid = (reality_obj.get('shortId') or '')
+                params += ["security=reality", f"sni={_urlquote(sni)}"]
+                if pbk:
+                    params.append(f"pbk={_urlquote(pbk)}")
+                if sid:
+                    params.append(f"sid={_urlquote(sid)}")
+                params.append("fp=chrome")
+            # assemble
+            query = '&'.join(params)
+            return f"vless://{uuid}@{host}:{int(port)}?{query}#{_urlquote(str(remark))}"
+
+        def _build_vmess() -> str:
+            uuid = client.get('id') or client.get('uuid') or ''
+            if not uuid:
+                return ''
+            vmess_obj = {
+                'v': '2',
+                'ps': str(remark),
+                'add': host,
+                'port': str(int(port)),
+                'id': uuid,
+                'aid': '0',
+                'net': network,
+                'type': 'none',
+                'host': '',
+                'path': '',
+                'tls': 'tls' if security in ('tls','xtls') else '',
+                'sni': tls_obj.get('serverName') or '',
+            }
+            if network == 'ws':
+                vmess_obj['path'] = ws_obj.get('path') or '/'
+                vmess_obj['host'] = (ws_obj.get('headers') or {}).get('Host') or host
+            data = _json.dumps(vmess_obj, separators=(',',':'), ensure_ascii=False).encode('utf-8')
+            b64 = base64.b64encode(data).decode('utf-8')
+            return f"vmess://{b64}"
+
+        configs: list[str] = []
+        if protocol == 'vless':
+            c = _build_vless()
+            if c:
+                configs.append(c)
+        elif protocol == 'vmess':
+            c = _build_vmess()
+            if c:
+                configs.append(c)
+        # Could extend to trojan if needed
+        return configs
+    except Exception as e:
+        logger.error(f"Failed to build configs from inbound: {e}")
         return []
 
 def _reset_pending_flows(context: ContextTypes.DEFAULT_TYPE):
@@ -304,12 +437,20 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         return
 
-    # Fetch subscription content and send direct config lines instead of sub link
+    # Build direct configs from inbound where possible; fallback to fetching sub content
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
     execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
-    configs = _fetch_subscription_configs(sub_link)
+    inbound_detail = getattr(api, '_fetch_inbound_detail', lambda _id: None)(int(inbound_id))
+    configs = []
+    if inbound_detail:
+        try:
+            configs = _build_configs_from_inbound(inbound_detail, username, panel_row) or []
+        except Exception:
+            configs = []
+    if not configs:
+        configs = _fetch_subscription_configs(sub_link)
     footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
     if configs:
         # Limit to first few entries to keep message concise
@@ -321,7 +462,7 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
         )
     else:
-        # Fallback: send sub link if fetching configs failed
+        # Fallback: send sub link if building/fetching configs failed
         user_message = (
             f"✅ سفارش شما تایید شد!\n\n"
             f"<b>پلن:</b> {plan['name']}\n"
