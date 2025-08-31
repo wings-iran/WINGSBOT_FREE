@@ -528,6 +528,106 @@ class XuiAPI(BasePanelAPI):
     async def create_user(self, user_id, plan):
         return None, None, "برای X-UI ابتدا اینباند را انتخاب کنید."
 
+    def recreate_user_key_on_inbound(self, inbound_id: int, username: str):
+        # Login and fetch inbound
+        if not self.get_token():
+            return None
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return None
+        try:
+            import random as _rand, string as _str
+            settings_str = inbound.get('settings')
+            settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                return None
+            # locate old client
+            old_client = None
+            for c in clients:
+                if c.get('email') == username:
+                    old_client = c
+                    break
+            if not old_client:
+                return None
+            # prepare new client preserving quota and expiry
+            new_client = {
+                "id": str(uuid.uuid4()),
+                "email": username,
+                "totalGB": int(old_client.get('totalGB', 0) or 0),
+                "expiryTime": int(old_client.get('expiryTime', 0) or 0),
+                "enable": True,
+                "limitIp": int(old_client.get('limitIp', 0) or 0),
+                "subId": ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12)),
+                "reset": 0,
+            }
+            # Try to add new client first
+            add_endpoints = [
+                f"{self.base_url}/xui/API/inbounds/addClient",
+                f"{self.base_url}/panel/API/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbounds/addClient",
+                f"{self.base_url}/panel/api/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbound/addClient",
+            ]
+            json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'}
+            added = False
+            last_err = None
+            for ep in add_endpoints:
+                try:
+                    # A) clients array JSON
+                    r1 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "clients": [new_client]}, timeout=15)
+                    if r1.status_code in (200, 201):
+                        added = True
+                        break
+                    # B) settings JSON string
+                    settings_payload = json.dumps({"clients": [new_client]})
+                    r2 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "settings": settings_payload}, timeout=15)
+                    if r2.status_code in (200, 201):
+                        added = True
+                        break
+                    # C) form urlencoded
+                    r3 = self.session.post(ep, headers=form_headers, data={"id": str(int(inbound_id)), "settings": settings_payload}, timeout=15)
+                    if r3.status_code in (200, 201):
+                        added = True
+                        break
+                    last_err = f"{ep} -> HTTP {r1.status_code}/{r2.status_code}/{r3.status_code}"
+                except requests.RequestException as e:
+                    last_err = str(e)
+                    continue
+            if not added:
+                return None
+            # Delete old client (best-effort)
+            old_uuid = old_client.get('id') or old_client.get('uuid') or ''
+            del_endpoints = [
+                f"{self.base_url}/xui/API/inbounds/delClient",
+                f"{self.base_url}/panel/API/inbounds/delClient",
+                f"{self.base_url}/xui/api/inbounds/delClient",
+                f"{self.base_url}/panel/api/inbounds/delClient",
+                f"{self.base_url}/xui/api/inbound/delClient",
+            ]
+            del_endpoints = ([f"{e}/{old_uuid}" for e in del_endpoints] + del_endpoints) if old_uuid else del_endpoints
+            for ep in del_endpoints:
+                try:
+                    payloads = [
+                        {"id": int(inbound_id), "clientId": old_uuid},
+                        {"id": int(inbound_id), "uuid": old_uuid},
+                        {"id": int(inbound_id), "email": username},
+                    ]
+                    ok = False
+                    for p in payloads:
+                        r = self.session.post(ep, headers=json_headers, json=p, timeout=12)
+                        if r.status_code in (200, 201):
+                            ok = True
+                            break
+                    if ok:
+                        break
+                except requests.RequestException:
+                    continue
+            return new_client
+        except Exception:
+            return None
+
 
 class ThreeXuiAPI(BasePanelAPI):
     """3x-UI support using lowercase /xui/api endpoints."""

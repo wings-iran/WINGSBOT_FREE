@@ -417,6 +417,56 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             except Exception:
                 pass
             return ConversationHandler.END
+        # X-UI: recreate client to force new UUID and delete old
+        if panel_type in ('xui','x-ui','sanaei','alireza') and hasattr(panel_api, 'recreate_user_key_on_inbound'):
+            ib_id = None
+            if order.get('xui_inbound_id'):
+                ib_id = int(order['xui_inbound_id'])
+            else:
+                try:
+                    inbounds, _m = panel_api.list_inbounds()
+                    if inbounds:
+                        ib_id = inbounds[0].get('id')
+                except Exception:
+                    ib_id = None
+            if ib_id is None:
+                await query.answer("اینباندی یافت نشد", show_alert=True)
+                return ConversationHandler.END
+            new_client = panel_api.recreate_user_key_on_inbound(ib_id, order['marzban_username'])
+            if not new_client:
+                await query.answer("خطا در تغییر کلید", show_alert=True)
+                return ConversationHandler.END
+            # Build and send new config (3x-UI path builder differs; for X-UI we may send sub link or raw config if available)
+            try:
+                # Try to reuse 3x-UI config builder if present (compatible enough when inbounds have similar schema)
+                if hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                    if confs:
+                        cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
+                        if qrcode:
+                            try:
+                                buf = io.BytesIO(); qrcode.make(confs[0]).save(buf, format='PNG'); buf.seek(0)
+                                await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                            except Exception:
+                                await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                            return ConversationHandler.END
+                # Fallback to user info/sub link
+                info, _m = await panel_api.get_user(order['marzban_username'])
+                sub = (info.get('subscription_url') if info else '') or ''
+                if sub and not sub.startswith('http'):
+                    sub = f"{panel_api.base_url}{sub}"
+                caption = f"\U0001F511 کلید جدید صادر شد:\n<code>{sub or 'لینک یافت نشد'}</code>"
+                if qrcode and sub:
+                    try:
+                        buf = io.BytesIO(); qrcode.make(sub).save(buf, format='PNG'); buf.seek(0)
+                        await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=caption, parse_mode=ParseMode.HTML)
+                    except Exception:
+                        await context.bot.send_message(chat_id=query.message.chat_id, text=caption, parse_mode=ParseMode.HTML)
+                else:
+                    await context.bot.send_message(chat_id=query.message.chat_id, text=caption, parse_mode=ParseMode.HTML)
+            except Exception:
+                await query.answer("خطا در ارسال کانفیگ جدید", show_alert=True)
+            return ConversationHandler.END
         # Default: fetch fresh link and send
         user_info, message = await panel_api.get_user(order['marzban_username'])
         if not user_info:
