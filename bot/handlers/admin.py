@@ -3,6 +3,8 @@ import io
 import csv
 import sqlite3
 from datetime import datetime
+import base64
+import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError, Forbidden, BadRequest
@@ -48,6 +50,42 @@ def _is_admin(user_id: int) -> bool:
         return True
     row = query_db("SELECT 1 FROM admins WHERE user_id = ?", (user_id,), one=True)
     return bool(row)
+
+def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list[str]:
+    """Fetch subscription content and return a list of config URIs.
+
+    Supports plain-text lists and base64-encoded payloads. Filters known URI schemes.
+    """
+    try:
+        headers = {
+            'Accept': 'text/plain, application/octet-stream, */*',
+            'User-Agent': 'Mozilla/5.0',
+        }
+        resp = requests.get(sub_url, headers=headers, timeout=timeout_seconds)
+        resp.raise_for_status()
+        raw_text = (resp.text or '').strip()
+        if any(proto in raw_text for proto in ("vmess://", "vless://", "trojan://", "ss://", "hy2://")):
+            text = raw_text
+        else:
+            # Try base64 decode when content does not directly contain URIs
+            b = raw_text.strip()
+            # Remove whitespace and fix padding
+            compact = "".join(b.split())
+            missing = len(compact) % 4
+            if missing:
+                compact += "=" * (4 - missing)
+            try:
+                decoded = base64.b64decode(compact, validate=False)
+                text = decoded.decode('utf-8', errors='ignore')
+            except Exception:
+                text = raw_text
+        lines = [ln.strip() for ln in (text or '').splitlines()]
+        configs = [ln for ln in lines if ln and ln.split(':', 1)[0] in ("vmess", "vless", "trojan", "ss", "hy2") and 
+                   (ln.startswith("vmess://") or ln.startswith("vless://") or ln.startswith("trojan://") or ln.startswith("ss://") or ln.startswith("hy2://"))]
+        return configs
+    except Exception as e:
+        logger.error(f"Failed to fetch/parse subscription from {sub_url}: {e}")
+        return []
 
 def _reset_pending_flows(context: ContextTypes.DEFAULT_TYPE):
     # Safely cancel any pending flows to avoid handler conflicts
@@ -249,15 +287,29 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         return
 
-    # Directly send URL (config) to user without QR flow
+    # Fetch subscription content and send direct config lines instead of sub link
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
     execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
-
-    user_message = (f"✅ سفارش شما تایید شد!\n\n"
-                    f"<b>پلن:</b> {plan['name']}\n"
-                    f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or ''))
+    configs = _fetch_subscription_configs(sub_link)
+    footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
+    if configs:
+        # Limit to first few entries to keep message concise
+        preview = configs[:5]
+        configs_text = "\n".join(preview)
+        user_message = (
+            f"✅ سفارش شما تایید شد!\n\n"
+            f"<b>پلن:</b> {plan['name']}\n"
+            f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
+        )
+    else:
+        # Fallback: send sub link if fetching configs failed
+        user_message = (
+            f"✅ سفارش شما تایید شد!\n\n"
+            f"<b>پلن:</b> {plan['name']}\n"
+            f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
+        )
     try:
         await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
         ok_text = base_text + f"\n\n\u2705 **ارسال لینک با موفقیت انجام شد.**"
