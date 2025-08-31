@@ -2102,6 +2102,7 @@ class MarzneshinAPI(BasePanelAPI):
                 for idx, c in enumerate(clients):
                     if c.get('email') == username:
                         updated = dict(c)
+                        old_uuid = c.get('id') or c.get('uuid') or None
                         # Rotate identity based on protocol
                         if proto in ('vless','vmess'):
                             updated['id'] = str(_uuid.uuid4())
@@ -2113,11 +2114,14 @@ class MarzneshinAPI(BasePanelAPI):
                         # Push update via API
                         settings_payload = _json.dumps({"clients": [updated]})
                         payload = {"id": int(inbound_id), "settings": settings_payload}
-                        for ep in [
+                        endpoints = [
                             "/xui/api/inbounds/updateClient",
                             "/panel/api/inbounds/updateClient",
                             "/xui/api/inbound/updateClient",
-                        ]:
+                        ]
+                        if old_uuid:
+                            endpoints = [f"{e}/{old_uuid}" for e in endpoints] + endpoints
+                        for ep in endpoints:
                             try:
                                 resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
                                 if resp.status_code in (200, 201):
@@ -2318,11 +2322,12 @@ class MarzneshinAPI(BasePanelAPI):
                 "/panel/api/inbounds/updateClient",
                 "/xui/api/inbound/updateClient",
             ]
-            endpoints = list(base_endpoints)
+            endpoints = []
             if old_uuid:
                 for be in base_endpoints:
                     if be.endswith('updateClient'):
                         endpoints.append(f"{be}/{old_uuid}")
+            endpoints.extend(base_endpoints)
             # Try multiple formats per endpoint
             for ep in endpoints:
                 try:
