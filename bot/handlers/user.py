@@ -197,6 +197,28 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http')
         else user_info.get('subscription_url', 'لینک یافت نشد')
     )
+
+    # For 3x-UI panels, try to show direct configs instead of sub link
+    panel_type = (order.get('panel_type') or '').lower()
+    if not panel_type and order.get('panel_id'):
+        prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (order['panel_id'],), one=True)
+        if prow:
+            panel_type = (prow.get('panel_type') or '').lower()
+    link_label = "\U0001F517 لینک اشتراک:"
+    link_value = f"<code>{sub_link}</code>"
+    if panel_type in ('3xui','3x-ui','3x ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+        try:
+            inbounds, _m = panel_api.list_inbounds()
+            confs = []
+            if inbounds:
+                # Use first inbound to build configs
+                ib_id = inbounds[0].get('id')
+                confs = panel_api.get_configs_for_user_on_inbound(ib_id, marzban_username) or []
+            if confs:
+                link_label = "\U0001F517 کانفیگ‌ها:"
+                link_value = "\n".join(f"<code>{c}</code>" for c in confs)
+        except Exception:
+            pass
     # persist last link for fast reuse
     try:
         execute_db("UPDATE orders SET last_link = ? WHERE id = ?", (sub_link or '', order_id))
@@ -208,7 +230,7 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         f"<b>\U0001F4CA حجم کل:</b> {data_limit_gb}\n"
         f"<b>\U0001F4C8 حجم مصرفی:</b> {data_used_gb} گیگابایت\n"
         f"<b>\U0001F4C5 تاریخ انقضا:</b> {expire_date}\n\n"
-        f"<b>\U0001F517 لینک اشتراک:</b>\n<code>{sub_link}</code>"
+        f"<b>{link_label}</b>\n{link_value}"
     )
 
     keyboard = [
