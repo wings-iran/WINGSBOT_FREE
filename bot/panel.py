@@ -1570,108 +1570,69 @@ class MarzneshinAPI(BasePanelAPI):
         }, "Success"
 
     async def renew_user_in_panel(self, username, plan):
-        inbounds, msg = self.list_inbounds()
-        if not inbounds:
-            return None, msg
-        now_ms = int(datetime.now().timestamp() * 1000)
+        # Marzneshin renewal via PUT /api/users/{username}: add days and bytes
+        if not self.token and not self._ensure_token():
+            detail = (self._last_token_error or "نامشخص")
+            return None, f"توکن دریافت نشد: {detail}"
+        # Fetch current user
+        try:
+            ru = self.session.get(f"{self.base_url}/api/users/{username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+            if ru.status_code != 200:
+                return None, f"HTTP {ru.status_code} @ /api/users/{username}"
+            u = ru.json() if ru.headers.get('content-type','').lower().startswith('application/json') else {}
+        except requests.RequestException as e:
+            return None, str(e)
+
+        # Compute increments
         try:
             add_bytes = int(float(plan['traffic_gb']) * (1024 ** 3))
         except Exception:
             add_bytes = 0
         try:
-            days = int(plan['duration_days'])
-            add_ms = days * 86400 * 1000 if days > 0 else 0
+            add_days = int(plan['duration_days'])
         except Exception:
-            add_ms = 0
+            add_days = 0
 
-        def _fetch_inbound_detail(inbound_id: int):
-            if self.token:
-                for hdrs in self._token_header_variants():
-                    for p in [
-                        f"{self.api_base}/apiv2/inbounds/get/{inbound_id}",
-                        f"{self.api_base}/apiv2/inbound/get/{inbound_id}",
-                        f"{self.base_url}/apiv2/inbounds/get/{inbound_id}",
-                    ]:
-                        try:
-                            resp = self.session.get(p, headers=hdrs, timeout=12)
-                            if resp.status_code != 200:
-                                continue
-                            data = resp.json()
-                            inbound = data.get('obj') if isinstance(data, dict) else data
-                            if isinstance(inbound, dict):
-                                return inbound
-                        except Exception:
-                            continue
-            for p in [
-                f"{self.base_url}/xui/API/inbounds/get/{inbound_id}",
-                f"{self.base_url}/xui/api/inbounds/get/{inbound_id}",
-            ]:
-                try:
-                    resp = self.session.get(p, headers={'Accept': 'application/json'}, timeout=12)
-                    if resp.status_code != 200:
-                        continue
-                    data = resp.json()
-                    inbound = data.get('obj') if isinstance(data, dict) else data
-                    if isinstance(inbound, dict):
-                        return inbound
-                except Exception:
-                    continue
-            return None
+        # Current values
+        current_dl = u.get('data_limit') if isinstance(u, dict) else None
+        target_dl = None
+        try:
+            cur = int(current_dl) if current_dl is not None else None
+            if add_bytes > 0:
+                target_dl = (cur or 0) + add_bytes
+        except Exception:
+            target_dl = None
 
-        def _update_client_on(inbound_id: int, updated_client: dict):
-            # token-based
-            if self.token:
-                endpoints = [
-                    f"{self.api_base}/apiv2/inbounds/updateClient",
-                    f"{self.base_url}/apiv2/inbounds/updateClient",
-                ]
-                settings_payload = json.dumps({"clients": [updated_client]})
-                for hdrs in self._token_header_variants():
-                    for ep in endpoints:
-                        payload = {"id": int(inbound_id), "settings": settings_payload}
-                        try:
-                            resp = self.session.post(ep, headers=hdrs, json=payload, timeout=15)
-                            if resp.status_code in (200, 201):
-                                return True
-                        except requests.RequestException:
-                            continue
-            # cookie-based
-            settings_payload = json.dumps({"clients": [updated_client]})
-            for ep in ["/xui/API/inbounds/updateClient", "/xui/api/inbounds/updateClient"]:
-                try:
-                    resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json={"id": int(inbound_id), "settings": settings_payload}, timeout=15)
-                    if resp.status_code in (200, 201):
-                        return True
-                except requests.RequestException:
-                    continue
-            return False
+        from datetime import datetime, timedelta
+        target_expire_date = None
+        try:
+            ed = u.get('expire_date') or u.get('expireDate')
+            if isinstance(ed, str) and add_days > 0:
+                base_dt = datetime.fromisoformat(ed.replace('Z', '+00:00'))
+                target_expire_date = (base_dt + timedelta(days=add_days)).isoformat()
+            elif add_days > 0:
+                target_expire_date = (datetime.utcnow() + timedelta(days=add_days)).isoformat()
+        except Exception:
+            if add_days > 0:
+                target_expire_date = (datetime.utcnow() + timedelta(days=add_days)).isoformat()
 
-        for ib in inbounds:
-            inbound_id = ib.get('id')
-            inbound = _fetch_inbound_detail(inbound_id)
-            if not inbound:
-                continue
-            settings_str = inbound.get('settings')
-            try:
-                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else {}
-            except Exception:
-                settings_obj = {}
-            clients = settings_obj.get('clients') or []
-            if not isinstance(clients, list):
-                continue
-            for c in clients:
-                if c.get('email') == username:
-                    current_exp = int(c.get('expiryTime', 0) or 0)
-                    base = max(current_exp, now_ms)
-                    target_exp = base + (add_ms if add_ms > 0 else 0)
-                    new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
-                    updated = dict(c)
-                    updated['expiryTime'] = target_exp
-                    updated['totalGB'] = new_total
-                    if _update_client_on(inbound_id, updated):
-                        return updated, "Success"
-                    return None, "به‌روزرسانی کلاینت ناموفق بود"
-        return None, "کلاینت برای تمدید یافت نشد"
+        update_body = {"username": username}
+        if target_dl is not None:
+            update_body["data_limit"] = int(target_dl)
+        else:
+            update_body["data_limit"] = None  # no change
+        if target_expire_date is not None:
+            update_body["expire_date"] = target_expire_date
+        else:
+            update_body["expire_date"] = None
+
+        try:
+            rp = self.session.put(f"{self.base_url}/api/users/{username}", headers={"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}, json=update_body, timeout=15)
+            if rp.status_code not in (200, 201):
+                return None, f"HTTP {rp.status_code} @ /api/users/{username}: {(rp.text or '')[:200]}"
+            return rp.json() if rp.headers.get('content-type','').lower().startswith('application/json') else update_body, "Success"
+        except requests.RequestException as e:
+            return None, str(e)
 
     async def create_user(self, user_id, plan):
         # Ensure token
