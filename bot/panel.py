@@ -667,6 +667,10 @@ class XuiAPI(BasePanelAPI):
                                 # require growth when add requested
                                 grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
                                 grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
+                                try:
+                                    logger.info(f"X-UI renew verify A: before_total={cur_total} after_total={new_total_chk} before_exp={cur_exp_raw} after_exp={new_exp}")
+                                except Exception:
+                                    pass
                                 if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
                                     return updated, "Success"
                     # B) JSON body with settings string
@@ -681,6 +685,10 @@ class XuiAPI(BasePanelAPI):
                             if c2.get('email') == username:
                                 new_exp = int(c2.get('expiryTime', 0) or 0)
                                 new_total_chk = int(c2.get('totalGB', 0) or 0)
+                                try:
+                                    logger.info(f"X-UI renew verify B: before_total={cur_total} after_total={new_total_chk} before_exp={cur_exp_raw} after_exp={new_exp}")
+                                except Exception:
+                                    pass
                                 grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
                                 grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
                                 if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
@@ -697,6 +705,10 @@ class XuiAPI(BasePanelAPI):
                             if c2.get('email') == username:
                                 new_exp = int(c2.get('expiryTime', 0) or 0)
                                 new_total_chk = int(c2.get('totalGB', 0) or 0)
+                                try:
+                                    logger.info(f"X-UI renew verify C: before_total={cur_total} after_total={new_total_chk} before_exp={cur_exp_raw} after_exp={new_exp}")
+                                except Exception:
+                                    pass
                                 grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
                                 grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
                                 if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
@@ -768,6 +780,97 @@ class XuiAPI(BasePanelAPI):
             except Exception:
                 pass
             return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
+        except Exception as e:
+            return None, str(e)
+
+    def renew_by_recreate_on_inbound(self, inbound_id: int, username: str, add_gb: float, add_days: int):
+        if not self.get_token():
+            return None, "خطا در ورود به پنل X-UI"
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return None, "اینباند یافت نشد"
+        try:
+            import json as _json, uuid as _uuid, random as _rand, string as _str
+            now_ms = int(datetime.now().timestamp() * 1000)
+            settings_str = inbound.get('settings')
+            settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                return None, "ساختار کلاینت‌ها نامعتبر است"
+            old = None
+            for c in clients:
+                if c.get('email') == username:
+                    old = c
+                    break
+            if not old:
+                return None, "کلاینت یافت نشد"
+            current_exp = int(old.get('expiryTime', 0) or 0)
+            is_ms = current_exp > 10**11
+            now_unit = now_ms if is_ms else int(now_ms / 1000)
+            add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
+            base = max(current_exp, now_unit)
+            target_exp = base + add_unit if add_unit > 0 else current_exp
+            add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
+            cur_total = int(old.get('totalGB', 0) or 0)
+            new_total = cur_total + (add_bytes if add_bytes > 0 else 0)
+            # delete old
+            old_uuid = old.get('id') or old.get('uuid') or ''
+            del_eps = [
+                f"{self.base_url}/panel/api/inbounds/delClient",
+                f"{self.base_url}/xui/api/inbounds/delClient",
+                f"{self.base_url}/panel/API/inbounds/delClient",
+                f"{self.base_url}/xui/API/inbounds/delClient",
+                f"{self.base_url}/xui/api/inbound/delClient",
+            ]
+            del_eps = ([f"{e}/{old_uuid}" for e in del_eps] + del_eps) if old_uuid else del_eps
+            headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+            for ep in del_eps:
+                try:
+                    for body in (
+                        {"id": int(inbound_id), "clientId": old_uuid},
+                        {"id": int(inbound_id), "uuid": old_uuid},
+                        {"id": int(inbound_id), "email": username},
+                    ):
+                        r = self.session.post(ep, headers=headers, json=body, timeout=12)
+                        if r.status_code in (200, 201):
+                            break
+                except requests.RequestException:
+                    continue
+            # add new
+            new_client = {
+                "id": str(_uuid.uuid4()),
+                "email": username,
+                "totalGB": new_total,
+                "expiryTime": target_exp,
+                "enable": True,
+                "limitIp": int(old.get('limitIp', 0) or 0),
+                "subId": ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12)),
+                "reset": 0
+            }
+            add_eps = [
+                f"{self.base_url}/panel/api/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbounds/addClient",
+                f"{self.base_url}/panel/API/inbounds/addClient",
+                f"{self.base_url}/xui/API/inbounds/addClient",
+                f"{self.base_url}/xui/api/inbound/addClient",
+            ]
+            json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'}
+            settings_payload = _json.dumps({"clients": [new_client]})
+            for ep in add_eps:
+                try:
+                    r1 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "clients": [new_client]}, timeout=15)
+                    if r1.status_code in (200, 201):
+                        return new_client, "Success"
+                    r2 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "settings": settings_payload}, timeout=15)
+                    if r2.status_code in (200, 201):
+                        return new_client, "Success"
+                    r3 = self.session.post(ep, headers=form_headers, data={"id": str(int(inbound_id)), "settings": settings_payload}, timeout=15)
+                    if r3.status_code in (200, 201):
+                        return new_client, "Success"
+                except requests.RequestException:
+                    continue
+            return None, "ساخت کلاینت جدید ناموفق بود"
         except Exception as e:
             return None, str(e)
 
