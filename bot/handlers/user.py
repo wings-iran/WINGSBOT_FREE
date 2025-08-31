@@ -371,7 +371,41 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         if not ok:
             await query.answer("خطا در تغییر کلید", show_alert=True)
             return ConversationHandler.END
-        # Fetch fresh link
+        # For 3x-UI: send configs instead of sub link
+        panel_type = (order.get('panel_type') or '').lower()
+        if not panel_type and order.get('panel_id'):
+            prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (order['panel_id'],), one=True)
+            if prow:
+                panel_type = (prow.get('panel_type') or '').lower()
+        if panel_type in ('3xui','3x-ui','3x ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+            try:
+                ib_id = None
+                if order.get('xui_inbound_id'):
+                    ib_id = int(order['xui_inbound_id'])
+                else:
+                    inbounds, _m = panel_api.list_inbounds()
+                    if inbounds:
+                        ib_id = inbounds[0].get('id')
+                if ib_id is not None:
+                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                    if confs:
+                        cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
+                        sent = False
+                        if qrcode:
+                            try:
+                                buf = io.BytesIO()
+                                qrcode.make(confs[0]).save(buf, format='PNG')
+                                buf.seek(0)
+                                await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                                sent = True
+                            except Exception:
+                                sent = False
+                        if not sent:
+                            await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                        return ConversationHandler.END
+            except Exception:
+                pass
+        # Default: fetch fresh link and send
         user_info, message = await panel_api.get_user(order['marzban_username'])
         if not user_info:
             await query.answer("لینک جدید دریافت نشد", show_alert=True)
