@@ -1,4 +1,5 @@
 from datetime import datetime
+import requests, base64
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
@@ -32,6 +33,33 @@ def _normalize_amount_text(text: str) -> str:
     if t.startswith('/'):
         t = t[1:]
     return t
+
+
+def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list[str]:
+    try:
+        headers = {
+            'Accept': 'text/plain, application/octet-stream, */*',
+            'User-Agent': 'Mozilla/5.0',
+        }
+        r = requests.get(sub_url, headers=headers, timeout=timeout_seconds)
+        r.raise_for_status()
+        raw = (r.text or '').strip()
+        if any(proto in raw for proto in ("vmess://","vless://","trojan://","ss://","hy2://")):
+            text = raw
+        else:
+            compact = "".join(raw.split())
+            pad = len(compact) % 4
+            if pad:
+                compact += "=" * (4 - pad)
+            try:
+                decoded = base64.b64decode(compact, validate=False)
+                text = decoded.decode('utf-8', errors='ignore')
+            except Exception:
+                text = raw
+        lines = [ln.strip() for ln in (text or '').splitlines()]
+        return [ln for ln in lines if ln and (ln.startswith('vmess://') or ln.startswith('vless://') or ln.startswith('trojan://') or ln.startswith('ss://') or ln.startswith('hy2://'))]
+    except Exception:
+        return []
 
 
 async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -207,21 +235,28 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
             panel_type = (prow.get('panel_type') or '').lower()
     link_label = "\U0001F517 لینک اشتراک:"
     link_value = f"<code>{sub_link}</code>"
-    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui'):
         # Do not show sub link for 3x-UI, show configs or a placeholder
         link_label = "\U0001F517 کانفیگ‌ها:"
         link_value = "کانفیگی یافت نشد. دکمه ‘دریافت لینک مجدد’ را بزنید تا ساخته شود."
+        # Try build from inbound first (if supported), else decode subscription
         try:
-            ib_id = None
-            if order.get('xui_inbound_id'):
-                ib_id = int(order['xui_inbound_id'])
-            else:
-                inbounds, _m = panel_api.list_inbounds()
-                if inbounds:
-                    ib_id = inbounds[0].get('id')
             confs = []
-            if ib_id is not None:
-                confs = panel_api.get_configs_for_user_on_inbound(ib_id, marzban_username) or []
+            if hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+                ib_id = None
+                if order.get('xui_inbound_id'):
+                    ib_id = int(order['xui_inbound_id'])
+                else:
+                    inbounds, _m = panel_api.list_inbounds()
+                    if inbounds:
+                        ib_id = inbounds[0].get('id')
+                if ib_id is not None:
+                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, marzban_username) or []
+            if not confs:
+                # decode subscription content if available
+                maybe_sub = sub_link
+                if maybe_sub and maybe_sub.startswith('http'):
+                    confs = _fetch_subscription_configs(maybe_sub)
             if confs:
                 link_value = "\n".join(f"<code>{c}</code>" for c in confs)
         except Exception:
@@ -271,8 +306,8 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
         prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (order['panel_id'],), one=True)
         if prow:
             panel_type = (prow.get('panel_type') or '').lower()
-    # For 3x-UI/X-UI: build configs instead of sub link
-    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+    # For 3x-UI/X-UI/TX-UI: build configs instead of sub link
+    if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui'):
         try:
             # ensure login for 3x-UI
             if hasattr(panel_api, 'get_token'):
@@ -284,9 +319,10 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
             if order.get('xui_inbound_id'):
                 ib_id = int(order['xui_inbound_id'])
             else:
-                inbounds, _m = panel_api.list_inbounds()
-                if inbounds:
-                    ib_id = inbounds[0].get('id')
+                if hasattr(panel_api, 'list_inbounds'):
+                    inbounds, _m = panel_api.list_inbounds()
+                    if inbounds:
+                        ib_id = inbounds[0].get('id')
             if ib_id is None:
                 try:
                     await context.bot.send_message(chat_id=query.message.chat_id, text="اینباندی یافت نشد.")
@@ -295,12 +331,22 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 return ConversationHandler.END
             # try multiple times to account for propagation
             confs = []
-            for _ in range(4):
-                pref_id = (order.get('xui_client_id') or None)
-                confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username'], preferred_id=pref_id) or []
-                if confs:
-                    break
-                time.sleep(1.0)
+            if hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+                for _ in range(4):
+                    pref_id = (order.get('xui_client_id') or None)
+                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username'], preferred_id=pref_id) or []
+                    if confs:
+                        break
+                    time.sleep(1.0)
+            if not confs:
+                # decode subscription as fallback for display
+                user_info, message = await panel_api.get_user(order['marzban_username'])
+                if user_info:
+                    sub = (
+                        f"{panel_api.base_url}{user_info['subscription_url']}" if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http') else user_info.get('subscription_url', '')
+                    )
+                    if sub:
+                        confs = _fetch_subscription_configs(sub)
             if not confs:
                 try:
                     await context.bot.send_message(chat_id=query.message.chat_id, text="ساخت کانفیگ ناموفق بود - کمی بعد دوباره تلاش کنید.")

@@ -476,6 +476,7 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
     if not configs:
         configs = _fetch_subscription_configs(sub_link)
     footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
+    ptype_lower = (panel_row.get('panel_type') or '').lower()
     if configs:
         # Limit to first few entries to keep message concise
         preview = configs[:5]
@@ -486,12 +487,21 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
         )
     else:
-        # Fallback: send sub link if building/fetching configs failed
-        user_message = (
-            f"✅ سفارش شما تایید شد!\n\n"
-            f"<b>پلن:</b> {plan['name']}\n"
-            f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
-        )
+        # For TX-UI: do NOT send sub link fallback
+        if ptype_lower in ('txui','tx-ui','tx ui'):
+            user_message = (
+                f"✅ سفارش شما تایید شد!\n\n"
+                f"<b>پلن:</b> {plan['name']}\n"
+                f"⛔ ساخت مستقیم کانفیگ از اینباند/ساب ناموفق بود. لطفا مجدد تلاش کنید یا تنظیمات اینباند را بررسی کنید."\
+                f"\n\n" + footer
+            )
+        else:
+            # Fallback: send sub link for other panel types
+            user_message = (
+                f"✅ سفارش شما تایید شد!\n\n"
+                f"<b>پلن:</b> {plan['name']}\n"
+                f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
+            )
     try:
         sent = False
         if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(api, 'get_configs_for_user_on_inbound'):
