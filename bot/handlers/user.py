@@ -403,6 +403,9 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                         if not sent:
                             await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
                         return ConversationHandler.END
+                    else:
+                        await query.answer("ساخت کانفیگ ناموفق بود - چند لحظه بعد دوباره تلاش کنید", show_alert=True)
+                        return ConversationHandler.END
             except Exception:
                 pass
         # Default: fetch fresh link and send
