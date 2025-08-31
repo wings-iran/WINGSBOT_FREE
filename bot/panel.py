@@ -527,6 +527,29 @@ class ThreeXuiAPI(BasePanelAPI):
         }
 
     def get_token(self):
+        # Try form login first (more compatible)
+        try:
+            try:
+                self.session.get(f"{self.base_url}/login", timeout=8)
+            except requests.RequestException:
+                pass
+            form_headers = {
+                'Accept': 'text/html,application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+            resp = self.session.post(
+                f"{self.base_url}/login",
+                data={"username": self.username, "password": self.password},
+                headers=form_headers,
+                allow_redirects=False,
+                timeout=12,
+            )
+            if resp.status_code in (200, 204, 302, 303):
+                return True
+        except requests.RequestException:
+            pass
+        # Fallback to JSON login
         try:
             resp = self.session.post(
                 f"{self.base_url}/login",
@@ -534,11 +557,11 @@ class ThreeXuiAPI(BasePanelAPI):
                 headers=self._json_headers,
                 timeout=12,
             )
-            resp.raise_for_status()
-            return True
+            if resp.status_code in (200, 204, 302, 303):
+                return True
         except requests.RequestException as e:
             logger.error(f"3x-UI login error: {e}")
-            return False
+        return False
 
     def list_inbounds(self):
         if not self.get_token():
@@ -774,6 +797,10 @@ class ThreeXuiAPI(BasePanelAPI):
         paths = [
             f"/xui/api/inbounds/get/{inbound_id}",
             f"/panel/api/inbounds/get/{inbound_id}",
+            f"/xui/inbounds/get/{inbound_id}",
+            f"/panel/inbounds/get/{inbound_id}",
+            f"/xui/API/inbounds/get/{inbound_id}",
+            f"/panel/API/inbounds/get/{inbound_id}",
         ]
         for p in paths:
             try:
