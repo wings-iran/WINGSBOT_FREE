@@ -131,6 +131,29 @@ class MarzbanAPI(BasePanelAPI):
             logger.error(f"Failed to get user {marzban_username}: {e}")
             return None, f"خطای پنل: {e}"
 
+    def revoke_subscription(self, marzban_username: str):
+        # Try to revoke/rotate subscription URL for a user using common Marzban endpoints
+        if not self.access_token and not self.get_token():
+            return False, "توکن دریافت نشد"
+        headers = {'Authorization': f'Bearer {self.access_token}', 'accept': 'application/json'}
+        candidates = [
+            f"{self.base_url}/api/user/{marzban_username}/revoke-sub",
+            f"{self.base_url}/api/user/{marzban_username}/revoke_sub",
+            f"{self.base_url}/api/user/{marzban_username}/subscription/revoke",
+            f"{self.base_url}/api/user/{marzban_username}/revoke",
+        ]
+        last = None
+        for url in candidates:
+            try:
+                r = self.session.post(url, headers=headers, timeout=12)
+                if r.status_code in (200, 201, 202, 204):
+                    return True, "Success"
+                last = f"HTTP {r.status_code} @ {url}"
+            except requests.RequestException as e:
+                last = str(e)
+                continue
+        return False, (last or "Unknown")
+
     async def renew_user_in_panel(self, marzban_username, plan):
         current_user_info, message = await self.get_user(marzban_username)
         if not current_user_info:

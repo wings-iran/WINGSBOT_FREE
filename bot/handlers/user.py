@@ -263,7 +263,7 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await query.answer("اطلاعات سرویس ناقص است", show_alert=True)
         return ConversationHandler.END
     panel_api = VpnPanelAPI(panel_id=order['panel_id'])
-    # Only for Marzneshin we can revoke directly
+    # Marzneshin or Marzban
     try:
         import requests as _rq
         # Try to ensure token if available
@@ -272,13 +272,24 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 panel_api._ensure_token()
             except Exception:
                 pass
-        # Revoke sub
-        url = f"{panel_api.base_url}/api/users/{order['marzban_username']}/revoke_sub"
-        headers = {"Accept": "application/json"}
-        if getattr(panel_api, 'token', None):
-            headers["Authorization"] = f"Bearer {panel_api.token}"
-        r = panel_api.session.post(url, headers=headers, timeout=12)
-        if r.status_code not in (200, 201):
+        ok = False
+        # Marzneshin endpoint
+        try:
+            url = f"{panel_api.base_url}/api/users/{order['marzban_username']}/revoke_sub"
+            headers = {"Accept": "application/json"}
+            if getattr(panel_api, 'token', None):
+                headers["Authorization"] = f"Bearer {panel_api.token}"
+            r = panel_api.session.post(url, headers=headers, timeout=12)
+            ok = (r.status_code in (200, 201, 202, 204))
+        except Exception:
+            ok = False
+        # Marzban fallback
+        if not ok and hasattr(panel_api, 'revoke_subscription'):
+            try:
+                ok, _msg = panel_api.revoke_subscription(order['marzban_username'])
+            except Exception:
+                ok = False
+        if not ok:
             await query.answer("خطا در تغییر کلید", show_alert=True)
             return ConversationHandler.END
         # Fetch fresh link
