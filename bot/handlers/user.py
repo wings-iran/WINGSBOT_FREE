@@ -282,11 +282,17 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 if inbounds:
                     ib_id = inbounds[0].get('id')
             if ib_id is None:
-                await query.answer("اینباندی یافت نشد", show_alert=True)
+                try:
+                    await context.bot.send_message(chat_id=query.message.chat_id, text="اینباندی یافت نشد.")
+                except Exception:
+                    pass
                 return ConversationHandler.END
             confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
             if not confs:
-                await query.answer("ساخت کانفیگ ناموفق بود", show_alert=True)
+                try:
+                    await context.bot.send_message(chat_id=query.message.chat_id, text="ساخت کانفیگ ناموفق بود - کمی بعد دوباره تلاش کنید.")
+                except Exception:
+                    pass
                 return ConversationHandler.END
             cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
             sent = False
@@ -302,7 +308,10 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
             if not sent:
                 await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F517 کانفیگ‌های جدید:\n" + cfg_text), parse_mode=ParseMode.HTML)
         except Exception:
-            await query.answer("خطا در ساخت کانفیگ", show_alert=True)
+            try:
+                await context.bot.send_message(chat_id=query.message.chat_id, text="خطا در ساخت کانفیگ")
+            except Exception:
+                pass
         return ConversationHandler.END
     # Default: fetch fresh link from panel
     user_info, message = await panel_api.get_user(order['marzban_username'])
