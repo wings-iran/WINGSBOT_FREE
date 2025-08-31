@@ -258,6 +258,41 @@ async def refresh_service_link(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer("اطلاعات سرویس ناقص است", show_alert=True)
         return ConversationHandler.END
     panel_api = VpnPanelAPI(panel_id=order['panel_id'])
+    # Determine panel type
+    panel_type = (order.get('panel_type') or '').lower()
+    if not panel_type and order.get('panel_id'):
+        prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (order['panel_id'],), one=True)
+        if prow:
+            panel_type = (prow.get('panel_type') or '').lower()
+    # For 3x-UI: build configs instead of sub link
+    if panel_type in ('3xui','3x-ui','3x ui') and hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+        try:
+            inbounds, _m = panel_api.list_inbounds()
+            if not inbounds:
+                await query.answer("اینباندی یافت نشد", show_alert=True)
+                return ConversationHandler.END
+            ib_id = inbounds[0].get('id')
+            confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+            if not confs:
+                await query.answer("ساخت کانفیگ ناموفق بود", show_alert=True)
+                return ConversationHandler.END
+            cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
+            sent = False
+            if qrcode:
+                try:
+                    buf = io.BytesIO()
+                    qrcode.make(confs[0]).save(buf, format='PNG')
+                    buf.seek(0)
+                    await context.bot.send_photo(chat_id=query.message.chat_id, photo=buf, caption=("\U0001F517 کانفیگ‌های جدید:\n" + cfg_text), parse_mode=ParseMode.HTML)
+                    sent = True
+                except Exception:
+                    sent = False
+            if not sent:
+                await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F517 کانفیگ‌های جدید:\n" + cfg_text), parse_mode=ParseMode.HTML)
+        except Exception:
+            await query.answer("خطا در ساخت کانفیگ", show_alert=True)
+        return ConversationHandler.END
+    # Default: fetch fresh link from panel
     user_info, message = await panel_api.get_user(order['marzban_username'])
     if not user_info:
         await query.answer("دریافت لینک از پنل ناموفق بود", show_alert=True)
