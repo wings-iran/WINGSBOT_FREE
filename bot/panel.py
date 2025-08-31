@@ -627,14 +627,25 @@ class XuiAPI(BasePanelAPI):
                 "/xui/api/inbound/updateClient",
             ]
             endpoints = ([f"{e}/{uuid_old}" for e in base_eps] + base_eps) if uuid_old else base_eps
+            # Ensure fields expected by X-UI exist
+            if 'alterId' not in updated:
+                try:
+                    updated['alterId'] = int(updated.get('alterId', 0) or 0)
+                except Exception:
+                    updated['alterId'] = 0
+            if 'enable' not in updated:
+                updated['enable'] = True
+            # Build headers and payloads (match Postman curl: form-urlencoded first)
             json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
-            # Postman body requires settings as JSON-encoded string
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
             settings_payload = json.dumps({"clients": [updated]})
-            payload = {"id": int(inbound_id), "settings": settings_payload}
+            payload_json = {"id": int(inbound_id), "settings": settings_payload}
+            payload_form = {"id": str(int(inbound_id)), "settings": settings_payload}
             last_err = None
             for ep in endpoints:
                 try:
-                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload, timeout=15)
+                    # A) form-urlencoded (as in provided curl)
+                    r = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_form, timeout=15)
                     if r.status_code in (200, 201):
                         # verify by refetching inbound
                         ref = self._fetch_inbound_detail(inbound_id)
@@ -645,8 +656,29 @@ class XuiAPI(BasePanelAPI):
                         for c2 in (robj.get('clients') or []):
                             if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
                                 return updated, "Success"
-                    else:
-                        last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
+                    # B) JSON body with settings string
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_json, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    # C) JSON body with clients array
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json={"id": int(inbound_id), "clients": [updated]}, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
                 except requests.RequestException as e:
                     last_err = str(e)
                     continue
