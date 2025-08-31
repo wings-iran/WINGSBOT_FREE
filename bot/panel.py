@@ -1465,75 +1465,109 @@ class MarzneshinAPI(BasePanelAPI):
             return None, None, str(e)
 
     async def get_user(self, username):
-        # Try to find client across inbounds similar to X-UI approach
-        inbounds, msg = self.list_inbounds()
-        if not inbounds:
-            return None, msg
-        # helper to fetch inbound detail
-        def _fetch_inbound_detail(inbound_id: int):
-            # token-based endpoints
-            if self.token:
-                for hdrs in self._token_header_variants():
-                    for p in [
-                        f"{self.api_base}/apiv2/inbounds/get/{inbound_id}",
-                        f"{self.api_base}/apiv2/inbound/get/{inbound_id}",
-                        f"{self.base_url}/apiv2/inbounds/get/{inbound_id}",
-                    ]:
-                        try:
-                            resp = self.session.get(p, headers=hdrs, timeout=12)
-                            if resp.status_code != 200:
-                                continue
-                            data = resp.json()
-                            inbound = data.get('obj') if isinstance(data, dict) else data
-                            if isinstance(inbound, dict):
-                                return inbound
-                        except Exception:
-                            continue
-            # cookie-based
-            for p in [
-                f"{self.base_url}/xui/API/inbounds/get/{inbound_id}",
-                f"{self.base_url}/xui/api/inbounds/get/{inbound_id}",
-            ]:
-                try:
-                    resp = self.session.get(p, headers={'Accept': 'application/json'}, timeout=12)
-                    if resp.status_code != 200:
-                        continue
-                    data = resp.json()
-                    inbound = data.get('obj') if isinstance(data, dict) else data
-                    if isinstance(inbound, dict):
-                        return inbound
-                except Exception:
-                    continue
-            return None
+        # Marzneshin: use /api/users/{username} for core info and /sub/{username}/{key}/info|usage for stats
+        # 1) Ensure token and get user
+        if not self.token and not self._ensure_token():
+            detail = (self._last_token_error or "نامشخص")
+            return None, f"توکن دریافت نشد: {detail}"
+        try:
+            ru = self.session.get(f"{self.base_url}/api/users/{username}", headers={"Accept": "application/json", "Authorization": f"Bearer {self.token}"}, timeout=12)
+            if ru.status_code == 404:
+                return None, "کاربر یافت نشد"
+            if ru.status_code != 200:
+                return None, f"HTTP {ru.status_code} @ /api/users/{username}"
+            u = ru.json() if ru.headers.get('content-type','').lower().startswith('application/json') else {}
+        except requests.RequestException as e:
+            return None, str(e)
 
-        for ib in inbounds:
-            inbound_id = ib.get('id')
-            inbound = _fetch_inbound_detail(inbound_id)
-            if not inbound:
-                continue
-            settings_str = inbound.get('settings')
+        # Extract data_limit, expire
+        data_limit = 0
+        expire_ts = 0
+        try:
+            dl = u.get('data_limit')
+            if isinstance(dl, (int, float)):
+                data_limit = int(dl)
+        except Exception:
+            pass
+        try:
+            # prefer epoch seconds if provided
+            if isinstance(u.get('expire'), (int, float)):
+                expire_ts = int(u['expire'])
+            else:
+                # ISO string in expire_date
+                ed = u.get('expire_date') or u.get('expireDate')
+                if isinstance(ed, str) and ed:
+                    from datetime import datetime
+                    try:
+                        expire_ts = int(datetime.fromisoformat(ed.replace('Z', '+00:00')).timestamp())
+                    except Exception:
+                        expire_ts = 0
+        except Exception:
+            pass
+
+        # 2) Get subscription_url to derive sub key
+        sub_url = u.get('subscription_url') or u.get('subscription') or ''
+        if isinstance(sub_url, str) and sub_url and not sub_url.startswith('http'):
+            sub_url = f"{self.base_url}{sub_url}"
+
+        # Parse username/key from subscription url if possible
+        sub_user = None
+        sub_key = None
+        if isinstance(sub_url, str) and sub_url:
             try:
-                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else {}
+                import re as _re
+                m = _re.search(r"/sub/([^/]+)/([^/?#]+)", sub_url)
+                if m:
+                    sub_user, sub_key = m.group(1), m.group(2)
             except Exception:
-                settings_obj = {}
-            clients = settings_obj.get('clients') or []
-            if not isinstance(clients, list):
-                continue
-            for c in clients:
-                if c.get('email') == username:
-                    total_bytes = int(c.get('totalGB', 0) or 0)
-                    expiry_ms = int(c.get('expiryTime', 0) or 0)
-                    expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
-                    subid = c.get('subId') or ''
-                    origin = self.sub_base or f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
-                    sub_link = f"{origin}/sub/{subid}" if subid else ''
-                    return {
-                        'data_limit': total_bytes,
-                        'used_traffic': 0,
-                        'expire': expire,
-                        'subscription_url': sub_link,
-                    }, "Success"
-        return None, "کاربر یافت نشد"
+                pass
+
+        used_traffic = 0
+        # 3) Query public sub info/usage endpoints if key available
+        if sub_user and sub_key:
+            origin = f"{urlsplit(self.base_url).scheme}://{urlsplit(self.base_url).hostname}{(':'+str(urlsplit(self.base_url).port)) if urlsplit(self.base_url).port and not ((urlsplit(self.base_url).scheme=='http' and urlsplit(self.base_url).port==80) or (urlsplit(self.base_url).scheme=='https' and urlsplit(self.base_url).port==443)) else ''}"
+            info_url = f"{origin}/sub/{sub_user}/{sub_key}/info"
+            usage_url = f"{origin}/sub/{sub_user}/{sub_key}/usage"
+            try:
+                ri = self.session.get(info_url, headers={"Accept": "application/json"}, timeout=10)
+                if ri.status_code == 200:
+                    try:
+                        info = ri.json()
+                        # attempt to override data_limit/expire from info if present
+                        if isinstance(info, dict):
+                            if isinstance(info.get('data_limit'), (int, float)):
+                                data_limit = int(info['data_limit'])
+                            if isinstance(info.get('expire'), (int, float)):
+                                expire_ts = int(info['expire'])
+                    except Exception:
+                        pass
+            except requests.RequestException:
+                pass
+            try:
+                ru2 = self.session.get(usage_url, headers={"Accept": "application/json"}, timeout=10)
+                if ru2.status_code == 200:
+                    try:
+                        usage = ru2.json()
+                        if isinstance(usage, dict):
+                            # common keys: used, download+upload, total
+                            if isinstance(usage.get('used'), (int, float)):
+                                used_traffic = int(usage['used'])
+                            else:
+                                down = usage.get('download') or usage.get('down') or 0
+                                up = usage.get('upload') or usage.get('up') or 0
+                                if isinstance(down, (int, float)) or isinstance(up, (int, float)):
+                                    used_traffic = int(down or 0) + int(up or 0)
+                    except Exception:
+                        pass
+            except requests.RequestException:
+                pass
+
+        return {
+            'data_limit': data_limit,
+            'used_traffic': used_traffic,
+            'expire': expire_ts,
+            'subscription_url': sub_url or '',
+        }, "Success"
 
     async def renew_user_in_panel(self, username, plan):
         inbounds, msg = self.list_inbounds()
