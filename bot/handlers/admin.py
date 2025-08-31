@@ -309,9 +309,10 @@ async def admin_approve_renewal(update: Update, context: ContextTypes.DEFAULT_TY
     order = query_db("SELECT * FROM orders WHERE id = ?", (order_id,), one=True)
     plan = query_db("SELECT * FROM plans WHERE id = ?", (plan_id,), one=True)
 
+    is_media = bool(query.message.photo or query.message.video or query.message.document)
+    base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
+
     if not order or not plan:
-        is_media = bool(query.message.photo or query.message.video or query.message.document)
-        base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
         err_text = base_text + "\n\n\u274C **خطا:** سفارش یا پلن یافت نشد."
         if is_media:
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
@@ -320,8 +321,6 @@ async def admin_approve_renewal(update: Update, context: ContextTypes.DEFAULT_TY
         return
 
     if not order.get('panel_id'):
-        is_media = bool(query.message.photo or query.message.video or query.message.document)
-        base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
         err_text = base_text + "\n\n\u274C **خطا:** پنل این کاربر مشخص نیست."
         if is_media:
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
