@@ -941,6 +941,73 @@ class ThreeXuiAPI(BasePanelAPI):
         except Exception:
             return []
 
+    def renew_user_on_inbound(self, inbound_id: int, username: str, add_gb: float, add_days: int):
+        # Ensure login
+        try:
+            self.get_token()
+        except Exception:
+            pass
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return None, "اینباند یافت نشد"
+        try:
+            import json as _json
+            now_ms = int(datetime.now().timestamp() * 1000)
+            settings_str = inbound.get('settings')
+            settings_obj = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                return None, "ساختار کلاینت‌ها نامعتبر است"
+            updated = None
+            for c in clients:
+                if c.get('email') == username:
+                    add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
+                    add_ms = (int(add_days) * 86400 * 1000) if add_days and int(add_days) > 0 else 0
+                    current_exp = int(c.get('expiryTime', 0) or 0)
+                    base = max(current_exp, now_ms)
+                    target_exp = base + add_ms if add_ms > 0 else current_exp
+                    new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
+                    updated = dict(c)
+                    updated['expiryTime'] = target_exp
+                    updated['totalGB'] = new_total
+                    break
+            if not updated:
+                return None, "کلاینت یافت نشد"
+            payload_settings = _json.dumps({"clients": [updated]})
+            payload = {"id": int(inbound_id), "settings": payload_settings}
+            # Try multiple endpoints
+            endpoints = [
+                "/xui/API/inbounds/updateClient",
+                "/panel/API/inbounds/updateClient",
+                "/xui/api/inbounds/updateClient",
+                "/panel/api/inbounds/updateClient",
+                "/xui/api/inbound/updateClient",
+            ]
+            for ep in endpoints:
+                try:
+                    r = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
+                    if r.status_code in (200, 201):
+                        try:
+                            j = r.json()
+                            # success detection
+                            if isinstance(j, dict):
+                                if j.get('success') is True:
+                                    return updated, "Success"
+                                status_val = str(j.get('status', '')).lower()
+                                if status_val in ('ok','success','200'):
+                                    return updated, "Success"
+                                code_val = str(j.get('code', ''))
+                                if code_val.startswith('2'):
+                                    return updated, "Success"
+                        except Exception:
+                            # many 3x-ui return empty body on success
+                            return updated, "Success"
+                except requests.RequestException:
+                    continue
+            return None, "به‌روزرسانی کلاینت ناموفق بود"
+        except Exception as e:
+            return None, str(e)
+
     async def renew_user_in_panel(self, username, plan):
         if not self.get_token():
             return None, "خطا در ورود به پنل 3x-UI"

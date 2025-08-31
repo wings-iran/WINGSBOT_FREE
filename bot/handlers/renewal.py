@@ -135,7 +135,26 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
     marz_username = order.get('marzban_username')
     if not marz_username:
         return False, "نام کاربری سرویس ثبت نشده است"
-    renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
+    # For 3x-UI, renew on the same inbound id used at creation
+    panel_type = (query_db("SELECT panel_type FROM panels WHERE id = ?", (order['panel_id'],), one=True) or {}).get('panel_type', '').lower()
+    if panel_type in ('3xui','3x-ui','3x ui') and hasattr(api, 'renew_user_on_inbound'):
+        inbound_id = int(order.get('xui_inbound_id') or 0)
+        if inbound_id:
+            add_gb = 0.0
+            add_days = 0
+            try:
+                add_gb = float(plan.get('traffic_gb', 0))
+            except Exception:
+                add_gb = 0.0
+            try:
+                add_days = int(plan.get('duration_days', 0))
+            except Exception:
+                add_days = 0
+            renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
+        else:
+            renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
+    else:
+        renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
     if renewed_user:
         return True, "Success"
     return False, message
