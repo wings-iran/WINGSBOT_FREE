@@ -2354,7 +2354,7 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
             if int(bal_row.get('balance') or 0) < amount:
                 await update.message.reply_text("❌ موجودی کاربر کافی نیست برای کسر.")
                 raise ApplicationHandlerStop
-        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, ?, 'manual', 'approved', ?, ?)", (uid, amount, direc, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None))
+        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, ?, 'manual', 'approved', ?)", (uid, amount, direc, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         _wallet_apply_balance(uid, amount, direc)
         try:
             if direc == 'credit':
@@ -2402,7 +2402,7 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
             if int(bal_row.get('balance') or 0) < amount:
                 await update.message.reply_text("❌ موجودی کاربر کافی نیست برای کسر.")
                 raise ApplicationHandlerStop
-        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, ?, 'manual', 'approved', ?, ?)", (uid, amount, direc, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None))
+        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, ?, 'manual', 'approved', ?)", (uid, amount, direc, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         _wallet_apply_balance(uid, amount, direc)
         try:
             if direc == 'credit':
@@ -2437,7 +2437,7 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
         if not query_db("SELECT 1 FROM users WHERE user_id = ?", (uid,), one=True):
             await update.message.reply_text("❌ آیدی کاربر یافت نشد. لطفا آیدی عددی صحیح وارد کنید.")
             raise ApplicationHandlerStop
-        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, 'credit', 'manual', 'approved', ?, ?)", (uid, amount, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None))
+        execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, 'credit', 'manual', 'approved', ?)", (uid, amount, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         _wallet_apply_balance(uid, amount, 'credit')
         try:
             bal_row = query_db("SELECT balance FROM user_wallets WHERE user_id = ?", (uid,), one=True)

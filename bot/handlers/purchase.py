@@ -331,7 +331,7 @@ async def pay_method_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Deduct and log transaction
     execute_db("INSERT OR IGNORE INTO user_wallets (user_id, balance) VALUES (?, 0)", (user.id,))
     execute_db("UPDATE user_wallets SET balance = balance - ? WHERE user_id = ?", (int(final_price), user.id))
-    execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, 'debit', 'wallet', 'approved', ?, ?)", (user.id, int(final_price), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None))
+    execute_db("INSERT INTO wallet_transactions (user_id, amount, direction, method, status, created_at) VALUES (?, ?, 'debit', 'wallet', 'approved', ?)", (user.id, int(final_price), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
     is_renewal = context.user_data.get('renewing_order_id')
     if is_renewal:
