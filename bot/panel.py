@@ -708,9 +708,15 @@ class XuiAPI(BasePanelAPI):
             if not old_client:
                 return None
             # prepare new client preserving quota and expiry
+            # Build new email by keeping prefix and changing suffix
+            if '_' in username:
+                base_prefix = username.rsplit('_', 1)[0]
+            else:
+                base_prefix = username
+            new_email = f"{base_prefix}_{uuid.uuid4().hex[:6]}"
             new_client = {
                 "id": str(uuid.uuid4()),
-                "email": username,
+                "email": new_email,
                 "totalGB": int(old_client.get('totalGB', 0) or 0),
                 "expiryTime": int(old_client.get('expiryTime', 0) or 0),
                 "enable": True,

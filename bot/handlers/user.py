@@ -438,7 +438,9 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 await query.answer("خطا در تغییر کلید", show_alert=True)
                 return ConversationHandler.END
             try:
-                execute_db("UPDATE orders SET xui_client_id = ? WHERE id = ?", ((new_client.get('id') or new_client.get('uuid')), order_id))
+                # Update username to new email if changed (X-UI path)
+                new_username = new_client.get('email') or order['marzban_username']
+                execute_db("UPDATE orders SET marzban_username = ?, xui_client_id = ? WHERE id = ?", (new_username, (new_client.get('id') or new_client.get('uuid')), order_id))
             except Exception:
                 pass
             # Build and send new config (3x-UI path builder differs; for X-UI we may send sub link or raw config if available)
