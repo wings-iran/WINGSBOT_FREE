@@ -1021,6 +1021,7 @@ class ThreeXuiAPI(BasePanelAPI):
                     if be.endswith('updateClient'):
                         endpoints.append(f"{be}/{old_uuid}")
             endpoints.extend(base_endpoints)
+            last_preview = None
             for ep in endpoints:
                 try:
                     r = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
@@ -1038,8 +1039,7 @@ class ThreeXuiAPI(BasePanelAPI):
                                 if code_val.startswith('2'):
                                     return updated, "Success"
                         except Exception:
-                            # many 3x-ui return empty body on success
-                            # Verify by re-fetching inbound to ensure the values have changed
+                            # many 3x-ui return empty body on success; verify by reading back
                             new_ib = self._fetch_inbound_detail(inbound_id)
                             try:
                                 ns = _json.loads(new_ib.get('settings')) if isinstance(new_ib.get('settings'), str) else (new_ib.get('settings') or {})
@@ -1048,8 +1048,16 @@ class ThreeXuiAPI(BasePanelAPI):
                             for c2 in (ns.get('clients') or []):
                                 if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
                                     return updated, "Success"
+                    else:
+                        last_preview = f"{ep} -> HTTP {r.status_code}: {(r.text or '')[:180]}"
                 except requests.RequestException:
+                    last_preview = f"{ep} -> EXC"
                     continue
+            if last_preview:
+                try:
+                    logger.error(f"3x-UI renew update failed: {last_preview}")
+                except Exception:
+                    pass
             return None, "به‌روزرسانی کلاینت ناموفق بود"
         except Exception as e:
             return None, str(e)
@@ -2256,6 +2264,8 @@ class MarzneshinAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
                 flow = client.get('flow')
                 if flow:
                     qs.append(f'flow={flow}')
@@ -2295,6 +2305,8 @@ class MarzneshinAPI(BasePanelAPI):
                     qs.append(f'security={security}')
                     if sni:
                         qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
                 query = '&'.join(qs)
                 uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
                 configs.append(uri)
@@ -2357,13 +2369,13 @@ class MarzneshinAPI(BasePanelAPI):
                         endpoints.append(f"{be}/{old_uuid}")
             endpoints.extend(base_endpoints)
             # Try multiple formats per endpoint
+            last_preview = None
             for ep in endpoints:
+                # A) JSON with settings string
                 try:
-                    # A) JSON with settings string
                     payload_a = {"id": int(inbound_id), "settings": settings_payload}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_a, timeout=15)
                     if resp.status_code in (200, 201):
-                        # verify by refetching
                         _new = self._fetch_inbound_detail(inbound_id)
                         try:
                             _s = _json.loads(_new.get('settings')) if isinstance(_new.get('settings'), str) else (_new.get('settings') or {})
@@ -2371,17 +2383,18 @@ class MarzneshinAPI(BasePanelAPI):
                             _s = {}
                         for c2 in (_s.get('clients') or []):
                             if c2.get('email') == username:
-                                # check id/password rotated
                                 if proto in ('vless','vmess'):
                                     if c2.get('id') == updated.get('id'):
                                         return updated
                                 elif proto == 'trojan':
                                     if c2.get('password') == updated.get('password'):
                                         return updated
-                except requests.RequestException:
-                    pass
+                    else:
+                        last_preview = f"{ep} -> HTTP {resp.status_code}: {(resp.text or '')[:180]}"
+                except requests.RequestException as _e:
+                    last_preview = f"{ep} -> EXC {_e}"
+                # B) form-urlencoded with settings
                 try:
-                    # B) form-urlencoded with settings
                     payload_b = {"id": str(int(inbound_id)), "settings": settings_payload}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_b, timeout=15)
                     if resp.status_code in (200, 201):
@@ -2398,10 +2411,12 @@ class MarzneshinAPI(BasePanelAPI):
                                 elif proto == 'trojan':
                                     if c2.get('password') == updated.get('password'):
                                         return updated
+                    else:
+                        last_preview = f"{ep} -> HTTP {resp.status_code}: {(resp.text or '')[:180]}"
                 except requests.RequestException:
-                    pass
+                    last_preview = f"{ep} -> EXC form"
+                # C) JSON with clients array
                 try:
-                    # C) JSON with clients array
                     payload_c = {"id": int(inbound_id), "clients": full_clients}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_c, timeout=15)
                     if resp.status_code in (200, 201):
@@ -2418,7 +2433,14 @@ class MarzneshinAPI(BasePanelAPI):
                                 elif proto == 'trojan':
                                     if c2.get('password') == updated.get('password'):
                                         return updated
+                    else:
+                        last_preview = f"{ep} -> HTTP {resp.status_code}: {(resp.text or '')[:180]}"
                 except requests.RequestException:
+                    last_preview = f"{ep} -> EXC clients"
+            if last_preview:
+                try:
+                    logger.error(f"3x-UI rotate update failed: {last_preview}")
+                except Exception:
                     pass
             return None
         except Exception:
