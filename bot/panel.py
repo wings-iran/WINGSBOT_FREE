@@ -480,30 +480,49 @@ class XuiAPI(BasePanelAPI):
                 clients = []
             if not isinstance(clients, list):
                 continue
-            for c in clients:
+            for idx, c in enumerate(clients):
                 if c.get('email') == username:
-                    # compute renew values
                     current_exp = int(c.get('expiryTime', 0) or 0)
-                    target_exp = current_exp
-                    if add_ms > 0:
-                        base = max(current_exp, now_ms)
-                        target_exp = base + add_ms
+                    base = max(current_exp, now_ms)
+                    target_exp = base + (add_ms if add_ms > 0 else 0)
                     new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
                     updated = dict(c)
                     updated['expiryTime'] = target_exp
                     updated['totalGB'] = new_total
-                    # send update
-                    settings_payload = json.dumps({"clients": [updated]})
-                    payload = {"id": int(inbound_id), "settings": settings_payload}
-                    for up in ["/xui/API/inbounds/updateClient", "/panel/API/inbounds/updateClient", "/xui/api/inbounds/updateClient", "/panel/api/inbounds/updateClient"]:
+                    # Build full settings and endpoint variants
+                    full_clients = list(clients)
+                    full_clients[idx] = updated
+                    full_settings_payload = json.dumps({"clients": full_clients})
+                    payload = {"id": int(inbound_id), "settings": full_settings_payload}
+                    uuid_old = c.get('id') or c.get('uuid') or ''
+                    endpoints = [
+                        "/xui/API/inbounds/updateClient",
+                        "/panel/API/inbounds/updateClient",
+                        "/xui/api/inbounds/updateClient",
+                        "/panel/api/inbounds/updateClient",
+                    ]
+                    if uuid_old:
+                        endpoints = [f"{e}/{uuid_old}" for e in endpoints] + endpoints
+                    last_err = None
+                    for up in endpoints:
                         try:
                             resp = self.session.post(f"{self.base_url}{up}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
                             if resp.status_code in (200, 201):
-                                # assume success
-                                return updated, "Success"
-                        except requests.RequestException:
+                                # verify by refetching
+                                ref = self._fetch_inbound_detail(inbound_id)
+                                try:
+                                    robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                                except Exception:
+                                    robj = {}
+                                for c2 in (robj.get('clients') or []):
+                                    if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == target_exp and int(c2.get('totalGB', 0) or 0) == new_total:
+                                        return updated, "Success"
+                            else:
+                                last_err = f"HTTP {resp.status_code}: {(resp.text or '')[:160]}"
+                        except requests.RequestException as e:
+                            last_err = str(e)
                             continue
-                    return None, "به‌روزرسانی کلاینت ناموفق بود"
+                    return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
         return None, "کلاینت برای تمدید یافت نشد"
 
     async def create_user(self, user_id, plan):
