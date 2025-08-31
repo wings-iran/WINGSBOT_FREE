@@ -1667,7 +1667,8 @@ class ThreeXuiAPI(BasePanelAPI):
                 "enable": True,
                 "limitIp": int(old.get('limitIp', 0) or 0),
                 "subId": ''.join(_rand.choices(_str.ascii_lowercase + _str.digits, k=12)),
-                "reset": 0
+                "reset": 0,
+                "alterId": int(old.get('alterId', 0) or 0)
             }
             add_endpoints = [
                 f"{self.base_url}/xui/api/inbounds/addClient",
@@ -1681,27 +1682,47 @@ class ThreeXuiAPI(BasePanelAPI):
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
                 'X-Requested-With': 'XMLHttpRequest',
             }
-            added = False
+            added = False; last_err = None; last_ep = None
             settings_payload = _json.dumps({"clients": [new_client]})
             for ep in add_endpoints:
                 try:
                     # A) JSON clients array
                     r1 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "clients": [new_client]}, timeout=15)
                     if r1.status_code in (200, 201):
-                        added = True; break
+                        added = True; last_ep = ep; break
                     # B) JSON settings string
                     r2 = self.session.post(ep, headers=json_headers, json={"id": int(inbound_id), "settings": settings_payload}, timeout=15)
                     if r2.status_code in (200, 201):
-                        added = True; break
+                        added = True; last_ep = ep; break
                     # C) form-urlencoded settings
                     r3 = self.session.post(ep, headers=form_headers, data={"id": str(int(inbound_id)), "settings": settings_payload}, timeout=15)
                     if r3.status_code in (200, 201):
-                        added = True; break
+                        added = True; last_ep = ep; break
+                    last_err = f"{ep} -> HTTP {r1.status_code}/{r2.status_code}/{r3.status_code}"
                 except requests.RequestException:
+                    last_err = f"{ep} -> EXC"
                     continue
             if not added:
-                return None, "ساخت کلاینت جدید ناموفق بود"
-            return new_client, "Success"
+                return None, (last_err or "ساخت کلاینت جدید ناموفق بود")
+            # Verify by refetching inbound
+            ref = self._fetch_inbound_detail(inbound_id)
+            try:
+                robj = _json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+            except Exception:
+                robj = {}
+            for c2 in (robj.get('clients') or []):
+                if c2.get('email') == username:
+                    after_total = int(c2.get('totalGB', 0) or 0)
+                    after_exp = int(c2.get('expiryTime', 0) or 0)
+                    grew_total = after_total >= new_total
+                    grew_exp = after_exp >= target_exp
+                    if grew_total or grew_exp:
+                        return new_client, "Success"
+            try:
+                logger.error(f"X-UI/3x-UI recreate verify failed: inbound={inbound_id} before_total={cur_total} after_total={after_total if 'after_total' in locals() else 'n/a'} before_exp={current_exp} after_exp={after_exp if 'after_exp' in locals() else 'n/a'} last_ep={last_ep} err={last_err}")
+            except Exception:
+                pass
+            return None, "تایید افزایش حجم/زمان ناموفق بود"
         except Exception as e:
             return None, str(e)
 
