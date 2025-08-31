@@ -958,8 +958,8 @@ class ThreeXuiAPI(BasePanelAPI):
             clients = settings_obj.get('clients') or []
             if not isinstance(clients, list):
                 return None, "ساختار کلاینت‌ها نامعتبر است"
-            updated = None
-            for c in clients:
+            updated = None; idx = -1
+            for i, c in enumerate(clients):
                 if c.get('email') == username:
                     add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
                     add_ms = (int(add_days) * 86400 * 1000) if add_days and int(add_days) > 0 else 0
@@ -967,13 +967,18 @@ class ThreeXuiAPI(BasePanelAPI):
                     base = max(current_exp, now_ms)
                     target_exp = base + add_ms if add_ms > 0 else current_exp
                     new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
-                    updated = dict(c)
+                    updated = dict(c); idx = i
                     updated['expiryTime'] = target_exp
                     updated['totalGB'] = new_total
                     break
             if not updated:
                 return None, "کلاینت یافت نشد"
-            payload_settings = _json.dumps({"clients": [updated]})
+            # Push full settings to ensure persistence
+            full_clients = list(clients)
+            if idx >= 0:
+                full_clients[idx] = updated
+            settings_obj['clients'] = full_clients
+            payload_settings = _json.dumps(settings_obj)
             payload = {"id": int(inbound_id), "settings": payload_settings}
             # Try multiple endpoints
             endpoints = [
@@ -1001,7 +1006,15 @@ class ThreeXuiAPI(BasePanelAPI):
                                     return updated, "Success"
                         except Exception:
                             # many 3x-ui return empty body on success
-                            return updated, "Success"
+                            # Verify by re-fetching inbound to ensure the values have changed
+                            new_ib = self._fetch_inbound_detail(inbound_id)
+                            try:
+                                ns = _json.loads(new_ib.get('settings')) if isinstance(new_ib.get('settings'), str) else (new_ib.get('settings') or {})
+                            except Exception:
+                                ns = {}
+                            for c2 in (ns.get('clients') or []):
+                                if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                    return updated, "Success"
                 except requests.RequestException:
                     continue
             return None, "به‌روزرسانی کلاینت ناموفق بود"
@@ -2269,10 +2282,10 @@ class MarzneshinAPI(BasePanelAPI):
             if not isinstance(clients, list):
                 return None
             proto = (inbound.get('protocol') or inbound.get('type') or '').lower()
-            updated = None
-            for c in clients:
+            updated = None; idx = -1
+            for i, c in enumerate(clients):
                 if c.get('email') == username:
-                    updated = dict(c)
+                    updated = dict(c); idx = i
                     if proto in ('vless','vmess'):
                         updated['id'] = str(_uuid.uuid4())
                     elif proto == 'trojan':
@@ -2283,9 +2296,13 @@ class MarzneshinAPI(BasePanelAPI):
                     break
             if not updated:
                 return None
-            # Push update via API
-            settings_obj = {"clients": [updated]}
-            settings_payload = _json.dumps(settings_obj)
+            # Replace in full settings and push update via multiple formats
+            full_settings = settings_obj
+            full_clients = list(clients)
+            if idx >= 0:
+                full_clients[idx] = updated
+                full_settings['clients'] = full_clients
+            settings_payload = _json.dumps(full_settings)
             json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
             form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
             endpoints = [
@@ -2302,7 +2319,21 @@ class MarzneshinAPI(BasePanelAPI):
                     payload_a = {"id": int(inbound_id), "settings": settings_payload}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_a, timeout=15)
                     if resp.status_code in (200, 201):
-                        return updated
+                        # verify by refetching
+                        _new = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            _s = _json.loads(_new.get('settings')) if isinstance(_new.get('settings'), str) else (_new.get('settings') or {})
+                        except Exception:
+                            _s = {}
+                        for c2 in (_s.get('clients') or []):
+                            if c2.get('email') == username:
+                                # check id/password rotated
+                                if proto in ('vless','vmess'):
+                                    if c2.get('id') == updated.get('id'):
+                                        return updated
+                                elif proto == 'trojan':
+                                    if c2.get('password') == updated.get('password'):
+                                        return updated
                 except requests.RequestException:
                     pass
                 try:
@@ -2310,15 +2341,39 @@ class MarzneshinAPI(BasePanelAPI):
                     payload_b = {"id": str(int(inbound_id)), "settings": settings_payload}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_b, timeout=15)
                     if resp.status_code in (200, 201):
-                        return updated
+                        _new = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            _s = _json.loads(_new.get('settings')) if isinstance(_new.get('settings'), str) else (_new.get('settings') or {})
+                        except Exception:
+                            _s = {}
+                        for c2 in (_s.get('clients') or []):
+                            if c2.get('email') == username:
+                                if proto in ('vless','vmess'):
+                                    if c2.get('id') == updated.get('id'):
+                                        return updated
+                                elif proto == 'trojan':
+                                    if c2.get('password') == updated.get('password'):
+                                        return updated
                 except requests.RequestException:
                     pass
                 try:
                     # C) JSON with clients array
-                    payload_c = {"id": int(inbound_id), "clients": [updated]}
+                    payload_c = {"id": int(inbound_id), "clients": full_clients}
                     resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_c, timeout=15)
                     if resp.status_code in (200, 201):
-                        return updated
+                        _new = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            _s = _json.loads(_new.get('settings')) if isinstance(_new.get('settings'), str) else (_new.get('settings') or {})
+                        except Exception:
+                            _s = {}
+                        for c2 in (_s.get('clients') or []):
+                            if c2.get('email') == username:
+                                if proto in ('vless','vmess'):
+                                    if c2.get('id') == updated.get('id'):
+                                        return updated
+                                elif proto == 'trojan':
+                                    if c2.get('password') == updated.get('password'):
+                                        return updated
                 except requests.RequestException:
                     pass
             return None
