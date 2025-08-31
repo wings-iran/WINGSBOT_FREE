@@ -137,6 +137,7 @@ def _build_configs_from_inbound(inbound: dict, username: str, panel_row: dict) -
         reality_obj = stream.get('realitySettings') or {}
         ws_obj = stream.get('wsSettings') or {}
         grpc_obj = stream.get('grpcSettings') or {}
+        tcp_obj = stream.get('tcpSettings') or {}
 
         host = _infer_origin_host(panel_row) or (urlsplit(panel_row.get('url','')).hostname or '')
         if not host:
@@ -157,7 +158,27 @@ def _build_configs_from_inbound(inbound: dict, username: str, panel_row: dict) -
                 if service:
                     params += ["type=grpc", f"serviceName={_urlquote(service)}", "mode=gun"]
             else:
+                # tcp: support HTTP header with host/path if present
                 params += [f"type={network}"]
+                try:
+                    header = (tcp_obj.get('header') or {})
+                    htype = (header.get('type') or '').lower()
+                    if htype == 'http':
+                        # path
+                        req = header.get('request') or {}
+                        paths = req.get('path') or ['/']
+                        if isinstance(paths, list) and paths:
+                            params.append(f"path={_urlquote(str(paths[0]) or '/')}")
+                        # host header may be list
+                        hdrs = req.get('headers') or {}
+                        hh = hdrs.get('Host') or hdrs.get('host') or []
+                        if isinstance(hh, list) and hh:
+                            params.append(f"host={_urlquote(str(hh[0]))}")
+                        elif isinstance(hh, str) and hh:
+                            params.append(f"host={_urlquote(hh)}")
+                        params.append("headerType=http")
+                except Exception:
+                    pass
             # security
             if security in ('tls', 'xtls'):
                 sni = tls_obj.get('serverName') or host
@@ -176,6 +197,8 @@ def _build_configs_from_inbound(inbound: dict, username: str, panel_row: dict) -
                 if sid:
                     params.append(f"sid={_urlquote(sid)}")
                 params.append("fp=chrome")
+            else:
+                params.append("security=none")
             # assemble
             query = '&'.join(params)
             return f"vless://{uuid}@{host}:{int(port)}?{query}#{_urlquote(str(remark))}"
