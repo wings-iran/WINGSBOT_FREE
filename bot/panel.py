@@ -820,11 +820,33 @@ class ThreeXuiAPI(BasePanelAPI):
             path = ''
             host_header = ''
             service_name = ''
+            header_type = ''
             if network == 'ws':
                 ws = stream.get('wsSettings') or {}
                 path = ws.get('path') or '/'
                 headers = ws.get('headers') or {}
                 host_header = headers.get('Host') or headers.get('host') or ''
+            elif network == 'tcp':
+                tcp = stream.get('tcpSettings') or {}
+                header = tcp.get('header') or {}
+                if (header.get('type') or '').lower() == 'http':
+                    header_type = 'http'
+                    req = header.get('request') or {}
+                    # path can be list or string
+                    rp = req.get('path')
+                    if isinstance(rp, list) and rp:
+                        path = rp[0] or '/'
+                    elif isinstance(rp, str) and rp:
+                        path = rp
+                    else:
+                        path = '/'
+                    h = req.get('headers') or {}
+                    # Host header may be list
+                    hh = h.get('Host') or h.get('host') or ''
+                    if isinstance(hh, list) and hh:
+                        host_header = hh[0]
+                    elif isinstance(hh, str):
+                        host_header = hh
             if network == 'grpc':
                 grpc = stream.get('grpcSettings') or {}
                 service_name = grpc.get('serviceName') or ''
@@ -842,10 +864,15 @@ class ThreeXuiAPI(BasePanelAPI):
             configs = []
             if proto == 'vless' and uuid:
                 qs = []
-                qs.append('encryption=none')
                 if network:
                     qs.append(f'type={network}')
                 if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'tcp' and header_type == 'http':
+                    qs.append('headerType=http')
                     if path:
                         qs.append(f'path={path}')
                     if host_header:
