@@ -607,9 +607,12 @@ class XuiAPI(BasePanelAPI):
                 if c.get('email') == username:
                     current_exp = int(c.get('expiryTime', 0) or 0)
                     add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
-                    add_ms = (int(add_days) * 86400 * 1000) if add_days and int(add_days) > 0 else 0
-                    base = max(current_exp, now_ms)
-                    target_exp = base + add_ms if add_ms > 0 else current_exp
+                    # detect seconds vs milliseconds based on current value magnitude
+                    is_ms = current_exp > 10**11
+                    now_unit = now_ms if is_ms else int(now_ms / 1000)
+                    add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
+                    base = max(current_exp, now_unit)
+                    target_exp = base + add_unit if add_unit > 0 else current_exp
                     new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
                     updated = dict(c)
                     updated['expiryTime'] = target_exp
@@ -654,8 +657,11 @@ class XuiAPI(BasePanelAPI):
                         except Exception:
                             robj = {}
                         for c2 in (robj.get('clients') or []):
-                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
-                                return updated, "Success"
+                            if c2.get('email') == username:
+                                new_exp = int(c2.get('expiryTime', 0) or 0)
+                                new_total_chk = int(c2.get('totalGB', 0) or 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                    return updated, "Success"
                     # B) JSON body with settings string
                     r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_json, timeout=15)
                     if r.status_code in (200, 201):
@@ -665,8 +671,11 @@ class XuiAPI(BasePanelAPI):
                         except Exception:
                             robj = {}
                         for c2 in (robj.get('clients') or []):
-                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
-                                return updated, "Success"
+                            if c2.get('email') == username:
+                                new_exp = int(c2.get('expiryTime', 0) or 0)
+                                new_total_chk = int(c2.get('totalGB', 0) or 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                    return updated, "Success"
                     # C) JSON body with clients array
                     r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json={"id": int(inbound_id), "clients": [updated]}, timeout=15)
                     if r.status_code in (200, 201):
@@ -676,8 +685,11 @@ class XuiAPI(BasePanelAPI):
                         except Exception:
                             robj = {}
                         for c2 in (robj.get('clients') or []):
-                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
-                                return updated, "Success"
+                            if c2.get('email') == username:
+                                new_exp = int(c2.get('expiryTime', 0) or 0)
+                                new_total_chk = int(c2.get('totalGB', 0) or 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                    return updated, "Success"
                     last_ep = ep; last_code = r.status_code; last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
                 except requests.RequestException as e:
                     last_ep = ep; last_code = None; last_err = str(e)
