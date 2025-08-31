@@ -603,9 +603,12 @@ class XuiAPI(BasePanelAPI):
             if not isinstance(clients, list):
                 return None, "ساختار کلاینت‌ها نامعتبر است"
             updated = None
+            cur_total = 0
+            cur_exp_raw = 0
             for c in clients:
                 if c.get('email') == username:
                     current_exp = int(c.get('expiryTime', 0) or 0)
+                    cur_exp_raw = current_exp
                     add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
                     # detect seconds vs milliseconds based on current value magnitude
                     is_ms = current_exp > 10**11
@@ -613,7 +616,8 @@ class XuiAPI(BasePanelAPI):
                     add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
                     base = max(current_exp, now_unit)
                     target_exp = base + add_unit if add_unit > 0 else current_exp
-                    new_total = int(c.get('totalGB', 0) or 0) + (add_bytes if add_bytes > 0 else 0)
+                    cur_total = int(c.get('totalGB', 0) or 0)
+                    new_total = cur_total + (add_bytes if add_bytes > 0 else 0)
                     updated = dict(c)
                     updated['expiryTime'] = target_exp
                     updated['totalGB'] = new_total
@@ -660,7 +664,10 @@ class XuiAPI(BasePanelAPI):
                             if c2.get('email') == username:
                                 new_exp = int(c2.get('expiryTime', 0) or 0)
                                 new_total_chk = int(c2.get('totalGB', 0) or 0)
-                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                # require growth when add requested
+                                grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
+                                grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
                                     return updated, "Success"
                     # B) JSON body with settings string
                     r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_json, timeout=15)
@@ -674,7 +681,9 @@ class XuiAPI(BasePanelAPI):
                             if c2.get('email') == username:
                                 new_exp = int(c2.get('expiryTime', 0) or 0)
                                 new_total_chk = int(c2.get('totalGB', 0) or 0)
-                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
+                                grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
                                     return updated, "Success"
                     # C) JSON body with clients array
                     r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json={"id": int(inbound_id), "clients": [updated]}, timeout=15)
@@ -688,7 +697,9 @@ class XuiAPI(BasePanelAPI):
                             if c2.get('email') == username:
                                 new_exp = int(c2.get('expiryTime', 0) or 0)
                                 new_total_chk = int(c2.get('totalGB', 0) or 0)
-                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5):
+                                grew_total = (updated['totalGB'] > cur_total) if (updated['totalGB'] != cur_total) else (add_gb == 0)
+                                grew_exp = (updated['expiryTime'] > cur_exp_raw) if (updated['expiryTime'] != cur_exp_raw) else (add_days == 0)
+                                if new_total_chk == updated['totalGB'] and (new_exp == updated['expiryTime'] or abs(new_exp - updated['expiryTime']) <= 5) and (grew_total or grew_exp):
                                     return updated, "Success"
                     last_ep = ep; last_code = r.status_code; last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
                 except requests.RequestException as e:
