@@ -641,7 +641,7 @@ class XuiAPI(BasePanelAPI):
             settings_payload = json.dumps({"clients": [updated]})
             payload_json = {"id": int(inbound_id), "settings": settings_payload}
             payload_form = {"id": str(int(inbound_id)), "settings": settings_payload}
-            last_err = None
+            last_err = None; last_ep = None; last_code = None
             for ep in endpoints:
                 try:
                     # A) form-urlencoded (as in provided curl)
@@ -678,9 +678,9 @@ class XuiAPI(BasePanelAPI):
                         for c2 in (robj.get('clients') or []):
                             if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
                                 return updated, "Success"
-                    last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
+                    last_ep = ep; last_code = r.status_code; last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
                 except requests.RequestException as e:
-                    last_err = str(e)
+                    last_ep = ep; last_code = None; last_err = str(e)
                     continue
             # Fallback: update full inbound (some versions require full object)
             try:
@@ -735,11 +735,15 @@ class XuiAPI(BasePanelAPI):
                                 if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
                                     return updated, "Success"
                         else:
-                            last_err = f"{p} -> HTTP {rr.status_code}: {(rr.text or '')[:160]}"
+                            last_ep = p; last_code = rr.status_code; last_err = f"{p} -> HTTP {rr.status_code}: {(rr.text or '')[:160]}"
                     except requests.RequestException as e2:
-                        last_err = f"{p} -> EXC {e2}"
+                        last_ep = p; last_code = None; last_err = f"{p} -> EXC {e2}"
             except Exception as e3:
-                last_err = f"fallback error: {e3}"
+                last_ep = 'fallback'; last_code = None; last_err = f"fallback error: {e3}"
+            try:
+                logger.error(f"X-UI renew failed for {username} on inbound {inbound_id}: endpoint={last_ep} status={last_code} detail={last_err}")
+            except Exception:
+                pass
             return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
         except Exception as e:
             return None, str(e)

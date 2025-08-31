@@ -173,4 +173,9 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
         renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
     if renewed_user:
         return True, "Success"
+    try:
+        from ..config import logger as _logger
+        _logger.error(f"Renew failed for order {order_id} (panel {order['panel_id']} type {panel_type}): {message}")
+    except Exception:
+        pass
     return False, message
