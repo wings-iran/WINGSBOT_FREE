@@ -3,6 +3,10 @@ import io
 import csv
 import sqlite3
 from datetime import datetime
+import base64
+import requests
+import json as _json
+from urllib.parse import urlsplit, quote as _urlquote
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.constants import ParseMode, ChatAction
 from telegram.error import TelegramError, Forbidden, BadRequest
@@ -48,6 +52,196 @@ def _is_admin(user_id: int) -> bool:
         return True
     row = query_db("SELECT 1 FROM admins WHERE user_id = ?", (user_id,), one=True)
     return bool(row)
+
+def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list[str]:
+    """Fetch subscription content and return a list of config URIs.
+
+    Supports plain-text lists and base64-encoded payloads. Filters known URI schemes.
+    """
+    try:
+        headers = {
+            'Accept': 'text/plain, application/octet-stream, */*',
+            'User-Agent': 'Mozilla/5.0',
+        }
+        resp = requests.get(sub_url, headers=headers, timeout=timeout_seconds)
+        resp.raise_for_status()
+        raw_text = (resp.text or '').strip()
+        if any(proto in raw_text for proto in ("vmess://", "vless://", "trojan://", "ss://", "hy2://")):
+            text = raw_text
+        else:
+            # Try base64 decode when content does not directly contain URIs
+            b = raw_text.strip()
+            # Remove whitespace and fix padding
+            compact = "".join(b.split())
+            missing = len(compact) % 4
+            if missing:
+                compact += "=" * (4 - missing)
+            try:
+                decoded = base64.b64decode(compact, validate=False)
+                text = decoded.decode('utf-8', errors='ignore')
+            except Exception:
+                text = raw_text
+        lines = [ln.strip() for ln in (text or '').splitlines()]
+        configs = [ln for ln in lines if ln and ln.split(':', 1)[0] in ("vmess", "vless", "trojan", "ss", "hy2") and 
+                   (ln.startswith("vmess://") or ln.startswith("vless://") or ln.startswith("trojan://") or ln.startswith("ss://") or ln.startswith("hy2://"))]
+        return configs
+    except Exception as e:
+        logger.error(f"Failed to fetch/parse subscription from {sub_url}: {e}")
+        return []
+
+def _infer_origin_host(panel_row: dict) -> str:
+    try:
+        base = (panel_row.get('sub_base') or panel_row.get('url') or '').strip()
+        if not base:
+            return ''
+        parts = urlsplit(base)
+        return parts.hostname or ''
+    except Exception:
+        return ''
+
+def _build_configs_from_inbound(inbound: dict, username: str, panel_row: dict) -> list[str]:
+    """Construct one or more config URIs (vless/vmess) for the created client, using inbound settings.
+
+    This avoids relying on subscription fetches for X-UI-like panels.
+    """
+    try:
+        settings_str = inbound.get('settings')
+        try:
+            settings = _json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+        except Exception:
+            settings = {}
+        clients = settings.get('clients') or []
+        if not isinstance(clients, list):
+            return []
+        client = None
+        for c in clients:
+            if c.get('email') == username:
+                client = c
+                break
+        if not client:
+            return []
+
+        protocol = (inbound.get('protocol') or '').lower()
+        port = inbound.get('port') or inbound.get('listen_port') or 0
+        remark = inbound.get('remark') or inbound.get('tag') or username
+
+        stream = {}
+        try:
+            stream = _json.loads(inbound.get('streamSettings')) if isinstance(inbound.get('streamSettings'), str) else (inbound.get('streamSettings') or {})
+        except Exception:
+            stream = inbound.get('streamSettings') or {}
+
+        network = (stream.get('network') or 'tcp').lower()
+        security = (stream.get('security') or 'none').lower()
+        tls_obj = stream.get('tlsSettings') or {}
+        reality_obj = stream.get('realitySettings') or {}
+        ws_obj = stream.get('wsSettings') or {}
+        grpc_obj = stream.get('grpcSettings') or {}
+        tcp_obj = stream.get('tcpSettings') or {}
+
+        host = _infer_origin_host(panel_row) or (urlsplit(panel_row.get('url','')).hostname or '')
+        if not host:
+            return []
+
+        def _build_vless() -> str:
+            uuid = client.get('id') or client.get('uuid') or ''
+            if not uuid:
+                return ''
+            params = ["encryption=none"]
+            # stream params
+            if network == 'ws':
+                path = ws_obj.get('path') or '/'
+                host_header = (ws_obj.get('headers') or {}).get('Host') or host
+                params += [f"type=ws", f"path={_urlquote(path)}", f"host={_urlquote(host_header)}"]
+            elif network == 'grpc':
+                service = grpc_obj.get('serviceName') or ''
+                if service:
+                    params += ["type=grpc", f"serviceName={_urlquote(service)}", "mode=gun"]
+            else:
+                # tcp: support HTTP header with host/path if present
+                params += [f"type={network}"]
+                try:
+                    header = (tcp_obj.get('header') or {})
+                    htype = (header.get('type') or '').lower()
+                    if htype == 'http':
+                        # path
+                        req = header.get('request') or {}
+                        paths = req.get('path') or ['/']
+                        if isinstance(paths, list) and paths:
+                            params.append(f"path={_urlquote(str(paths[0]) or '/')}")
+                        # host header may be list
+                        hdrs = req.get('headers') or {}
+                        hh = hdrs.get('Host') or hdrs.get('host') or []
+                        if isinstance(hh, list) and hh:
+                            params.append(f"host={_urlquote(str(hh[0]))}")
+                        elif isinstance(hh, str) and hh:
+                            params.append(f"host={_urlquote(hh)}")
+                        params.append("headerType=http")
+                except Exception:
+                    pass
+            # security
+            if security in ('tls', 'xtls'):
+                sni = tls_obj.get('serverName') or host
+                alpn = tls_obj.get('alpn')
+                params += ["security=tls", f"sni={_urlquote(sni)}"]
+                if isinstance(alpn, list) and alpn:
+                    params.append(f"alpn={_urlquote(','.join(alpn))}")
+                params.append("fp=chrome")
+            elif security == 'reality':
+                sni = (reality_obj.get('serverNames') or [host])[0]
+                pbk = reality_obj.get('publicKey') or ''
+                sid = (reality_obj.get('shortId') or '')
+                params += ["security=reality", f"sni={_urlquote(sni)}"]
+                if pbk:
+                    params.append(f"pbk={_urlquote(pbk)}")
+                if sid:
+                    params.append(f"sid={_urlquote(sid)}")
+                params.append("fp=chrome")
+            else:
+                params.append("security=none")
+            # assemble
+            query = '&'.join(params)
+            return f"vless://{uuid}@{host}:{int(port)}?{query}#{_urlquote(str(remark))}"
+
+        def _build_vmess() -> str:
+            uuid = client.get('id') or client.get('uuid') or ''
+            if not uuid:
+                return ''
+            vmess_obj = {
+                'v': '2',
+                'ps': str(remark),
+                'add': host,
+                'port': str(int(port)),
+                'id': uuid,
+                'aid': '0',
+                'net': network,
+                'type': 'none',
+                'host': '',
+                'path': '',
+                'tls': 'tls' if security in ('tls','xtls') else '',
+                'sni': tls_obj.get('serverName') or '',
+            }
+            if network == 'ws':
+                vmess_obj['path'] = ws_obj.get('path') or '/'
+                vmess_obj['host'] = (ws_obj.get('headers') or {}).get('Host') or host
+            data = _json.dumps(vmess_obj, separators=(',',':'), ensure_ascii=False).encode('utf-8')
+            b64 = base64.b64encode(data).decode('utf-8')
+            return f"vmess://{b64}"
+
+        configs: list[str] = []
+        if protocol == 'vless':
+            c = _build_vless()
+            if c:
+                configs.append(c)
+        elif protocol == 'vmess':
+            c = _build_vmess()
+            if c:
+                configs.append(c)
+        # Could extend to trojan if needed
+        return configs
+    except Exception as e:
+        logger.error(f"Failed to build configs from inbound: {e}")
+        return []
 
 def _reset_pending_flows(context: ContextTypes.DEFAULT_TYPE):
     # Safely cancel any pending flows to avoid handler conflicts
@@ -174,7 +368,7 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    # Default marzban flow (unchanged)
+    # Default marzban flow (now attempts to send actual configs if a sub link is returned)
     marzban_username, config_link, message = await api.create_user(order['user_id'], plan)
     if config_link and marzban_username:
         execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ? WHERE id = ?", (marzban_username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), order_id))
@@ -184,12 +378,10 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
         await _apply_referral_bonus(order_id, context)
         cfg = query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True)
         footer = (cfg.get('value') if cfg else '') or ''
-        user_message = (
-            f"✅ سفارش شما تایید شد!\n\n"
-            f"<b>پلن:</b> {plan['name']}\n"
-            f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
-        )
+        # If 'config_link' looks like a subscription endpoint or contains multiple links, try to fetch real configs
+        final_message = None
         try:
+<<<<<<< HEAD
             sent = False
             # If 3x-UI, try to send direct configs along with message
             if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui') and hasattr(api, 'get_configs_for_user_on_inbound'):
@@ -212,6 +404,29 @@ async def admin_approve_on_panel(update: Update, context: ContextTypes.DEFAULT_T
                     await context.bot.send_photo(chat_id=order['user_id'], photo=qr_buf, caption=user_message, parse_mode=ParseMode.HTML)
                 except Exception:
                     await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+=======
+            looks_like_sub = isinstance(config_link, str) and ('/sub/' in config_link or config_link.startswith('http'))
+            if looks_like_sub:
+                configs = _fetch_subscription_configs(config_link)
+                if configs:
+                    preview = configs[:5]
+                    configs_text = "\n".join(preview)
+                    final_message = (
+                        f"✅ سفارش شما تایید شد!\n\n"
+                        f"<b>پلن:</b> {plan['name']}\n"
+                        f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
+                    )
+        except Exception:
+            pass
+        if not final_message:
+            final_message = (
+                f"✅ سفارش شما تایید شد!\n\n"
+                f"<b>پلن:</b> {plan['name']}\n"
+                f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n" + (footer)
+            )
+        try:
+            await context.bot.send_message(order['user_id'], final_message, parse_mode=ParseMode.HTML)
+>>>>>>> feature/txui-direct-configs
             done_text = base_text + f"\n\n\u2705 **ارسال خودکار موفق بود.**"
             if is_media:
                 await _safe_edit_caption(query.message, done_text, parse_mode=ParseMode.HTML, reply_markup=None)
@@ -270,15 +485,48 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         return
 
+<<<<<<< HEAD
     # Directly send URL (config) to user; for 3x-UI also try sending direct configs
+=======
+    # Build direct configs from inbound where possible; fallback to fetching sub content
+>>>>>>> feature/txui-direct-configs
     panel_row = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
     execute_db("UPDATE orders SET status = 'approved', marzban_username = ?, panel_id = ?, panel_type = ?, xui_inbound_id = ? WHERE id = ?", (username, panel_id, (panel_row.get('panel_type') or 'marzban').lower(), int(inbound_id), order_id))
     if order.get('discount_code'):
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
+<<<<<<< HEAD
 
     # Build message body; for 3x-UI and X-UI we won't include sub link
     user_message = (f"✅ سفارش شما تایید شد!\n\n"
                     f"<b>پلن:</b> {plan['name']}\n" + (("\n" + (query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')))
+=======
+    inbound_detail = getattr(api, '_fetch_inbound_detail', lambda _id: None)(int(inbound_id))
+    configs = []
+    if inbound_detail:
+        try:
+            configs = _build_configs_from_inbound(inbound_detail, username, panel_row) or []
+        except Exception:
+            configs = []
+    if not configs:
+        configs = _fetch_subscription_configs(sub_link)
+    footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
+    if configs:
+        # Limit to first few entries to keep message concise
+        preview = configs[:5]
+        configs_text = "\n".join(preview)
+        user_message = (
+            f"✅ سفارش شما تایید شد!\n\n"
+            f"<b>پلن:</b> {plan['name']}\n"
+            f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
+        )
+    else:
+        # Fallback: send sub link if building/fetching configs failed
+        user_message = (
+            f"✅ سفارش شما تایید شد!\n\n"
+            f"<b>پلن:</b> {plan['name']}\n"
+            f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
+        )
+>>>>>>> feature/txui-direct-configs
     try:
         sent = False
         if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(api, 'get_configs_for_user_on_inbound'):
