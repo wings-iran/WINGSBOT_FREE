@@ -99,7 +99,7 @@ async def admin_panel_receive_type(update: Update, context: ContextTypes.DEFAULT
 async def admin_panel_receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['new_panel']['url'] = update.message.text
     ptype = context.user_data['new_panel'].get('type')
-    if ptype in ('xui', 'txui'):
+    if ptype in ('xui', '3xui', 'txui'):
         example = "مثال: http://example.com:2096 یا https://vpn.example.com:8443/app"
         await update.message.reply_text(
             "آدرس پایه ساب‌ لینک (subscription base) را وارد کنید.\n"
@@ -108,9 +108,6 @@ async def admin_panel_receive_url(update: Update, context: ContextTypes.DEFAULT_
             f"{example}\n\n"
             "نکته: ربات به‌صورت خودکار /sub/{subId} یا /sub/{subId}?name={subId} را با توجه به نوع پنل اضافه می‌کند.")
         return ADMIN_PANEL_AWAIT_SUB_BASE
-    if ptype == '3xui':
-        await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
-        return ADMIN_PANEL_AWAIT_USER
     if ptype == 'marzneshin':
         await update.message.reply_text("توکن API مرزنشین را وارد کنید (اختیاری؛ در صورت خالی بودن از ورود کوکی استفاده می‌شود):")
         return ADMIN_PANEL_AWAIT_TOKEN
