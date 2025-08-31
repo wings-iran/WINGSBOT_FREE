@@ -650,6 +650,64 @@ class XuiAPI(BasePanelAPI):
                 except requests.RequestException as e:
                     last_err = str(e)
                     continue
+            # Fallback: update full inbound (some versions require full object)
+            try:
+                up_paths = [
+                    f"/panel/api/inbounds/update/{int(inbound_id)}",
+                    f"/xui/api/inbounds/update/{int(inbound_id)}",
+                    f"/panel/API/inbounds/update/{int(inbound_id)}",
+                    f"/xui/API/inbounds/update/{int(inbound_id)}",
+                ]
+                full = self._fetch_inbound_detail(inbound_id) or {}
+                # embed updated client back
+                try:
+                    cur_settings = json.loads(full.get('settings')) if isinstance(full.get('settings'), str) else (full.get('settings') or {})
+                except Exception:
+                    cur_settings = {}
+                cur_clients = list(cur_settings.get('clients') or [])
+                for i, cc in enumerate(cur_clients):
+                    if cc.get('email') == username:
+                        cur_clients[i] = updated
+                        break
+                else:
+                    cur_clients.append(updated)
+                cur_settings['clients'] = cur_clients
+                settings_payload_str = json.dumps(cur_settings)
+                full_payload = {
+                    "id": int(inbound_id),
+                    "up": full.get('up', 0),
+                    "down": full.get('down', 0),
+                    "total": full.get('total', 0),
+                    "remark": full.get('remark') or "",
+                    "enable": bool(full.get('enable', True)),
+                    "expiryTime": full.get('expiryTime', 0) or 0,
+                    "listen": full.get('listen') or "",
+                    "port": full.get('port') or 0,
+                    "protocol": full.get('protocol') or full.get('type') or "vless",
+                    "settings": settings_payload_str,
+                    "streamSettings": full.get('streamSettings') or full.get('stream_settings') or "{}",
+                    "sniffing": full.get('sniffing') or "{}",
+                    "allocate": full.get('allocate') or "{}",
+                }
+                for p in up_paths:
+                    try:
+                        rr = self.session.post(f"{self.base_url}{p}", headers=json_headers, json=full_payload, timeout=15)
+                        if rr.status_code in (200, 201):
+                            # verify
+                            ref2 = self._fetch_inbound_detail(inbound_id)
+                            try:
+                                robj2 = json.loads(ref2.get('settings')) if isinstance(ref2.get('settings'), str) else (ref2.get('settings') or {})
+                            except Exception:
+                                robj2 = {}
+                            for c2 in (robj2.get('clients') or []):
+                                if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                    return updated, "Success"
+                        else:
+                            last_err = f"{p} -> HTTP {rr.status_code}: {(rr.text or '')[:160]}"
+                    except requests.RequestException as e2:
+                        last_err = f"{p} -> EXC {e2}"
+            except Exception as e3:
+                last_err = f"fallback error: {e3}"
             return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
         except Exception as e:
             return None, str(e)
