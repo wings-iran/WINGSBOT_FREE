@@ -279,6 +279,29 @@ class XuiAPI(BasePanelAPI):
         }
 
     def get_token(self):
+        # Try form login first (more compatible across versions)
+        try:
+            try:
+                self.session.get(f"{self.base_url}/login", timeout=8)
+            except requests.RequestException:
+                pass
+            form_headers = {
+                'Accept': 'text/html,application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+            resp = self.session.post(
+                f"{self.base_url}/login",
+                data={"username": self.username, "password": self.password},
+                headers=form_headers,
+                allow_redirects=False,
+                timeout=12,
+            )
+            if resp.status_code in (200, 204, 302, 303):
+                return True
+        except requests.RequestException:
+            pass
+        # Fallback to JSON login
         try:
             resp = self.session.post(
                 f"{self.base_url}/login",
@@ -286,11 +309,11 @@ class XuiAPI(BasePanelAPI):
                 headers=self._json_headers,
                 timeout=12,
             )
-            resp.raise_for_status()
-            return True
+            if resp.status_code in (200, 204, 302, 303):
+                return True
         except requests.RequestException as e:
             logger.error(f"X-UI login error: {e}")
-            return False
+        return False
 
     def list_inbounds(self):
         if not self.get_token():
@@ -489,26 +512,24 @@ class XuiAPI(BasePanelAPI):
                     updated = dict(c)
                     updated['expiryTime'] = target_exp
                     updated['totalGB'] = new_total
-                    # Build full settings and endpoint variants
-                    full_clients = list(clients)
-                    full_clients[idx] = updated
-                    full_settings_payload = json.dumps({"clients": full_clients})
-                    payload = {"id": int(inbound_id), "settings": full_settings_payload}
+                    # Endpoint variants (prioritize updateClient/{uuid})
                     uuid_old = c.get('id') or c.get('uuid') or ''
-                    endpoints = [
+                    base_eps = [
                         "/xui/API/inbounds/updateClient",
                         "/panel/API/inbounds/updateClient",
                         "/xui/api/inbounds/updateClient",
                         "/panel/api/inbounds/updateClient",
                     ]
-                    if uuid_old:
-                        endpoints = [f"{e}/{uuid_old}" for e in endpoints] + endpoints
+                    endpoints = ([f"{e}/{uuid_old}" for e in base_eps] + base_eps) if uuid_old else base_eps
+                    json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
+                    form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
                     last_err = None
                     for up in endpoints:
                         try:
-                            resp = self.session.post(f"{self.base_url}{up}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
+                            # A) settings with single updated client
+                            payload_settings_single = {"id": int(inbound_id), "settings": json.dumps({"clients": [updated]})}
+                            resp = self.session.post(f"{self.base_url}{up}", headers=json_headers, json=payload_settings_single, timeout=15)
                             if resp.status_code in (200, 201):
-                                # verify by refetching
                                 ref = self._fetch_inbound_detail(inbound_id)
                                 try:
                                     robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
@@ -517,8 +538,44 @@ class XuiAPI(BasePanelAPI):
                                 for c2 in (robj.get('clients') or []):
                                     if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == target_exp and int(c2.get('totalGB', 0) or 0) == new_total:
                                         return updated, "Success"
-                            else:
-                                last_err = f"HTTP {resp.status_code}: {(resp.text or '')[:160]}"
+                            # B) clients array JSON
+                            payload_clients = {"id": int(inbound_id), "clients": [updated]}
+                            resp = self.session.post(f"{self.base_url}{up}", headers=json_headers, json=payload_clients, timeout=15)
+                            if resp.status_code in (200, 201):
+                                ref = self._fetch_inbound_detail(inbound_id)
+                                try:
+                                    robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                                except Exception:
+                                    robj = {}
+                                for c2 in (robj.get('clients') or []):
+                                    if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == target_exp and int(c2.get('totalGB', 0) or 0) == new_total:
+                                        return updated, "Success"
+                            # C) form-urlencoded with settings (single)
+                            resp = self.session.post(f"{self.base_url}{up}", headers=form_headers, data={"id": str(int(inbound_id)), "settings": json.dumps({"clients": [updated]})}, timeout=15)
+                            if resp.status_code in (200, 201):
+                                ref = self._fetch_inbound_detail(inbound_id)
+                                try:
+                                    robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                                except Exception:
+                                    robj = {}
+                                for c2 in (robj.get('clients') or []):
+                                    if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == target_exp and int(c2.get('totalGB', 0) or 0) == new_total:
+                                        return updated, "Success"
+                            # D) settings with full clients
+                            full_clients = list(clients)
+                            full_clients[idx] = updated
+                            payload_settings_full = {"id": int(inbound_id), "settings": json.dumps({"clients": full_clients})}
+                            resp = self.session.post(f"{self.base_url}{up}", headers=json_headers, json=payload_settings_full, timeout=15)
+                            if resp.status_code in (200, 201):
+                                ref = self._fetch_inbound_detail(inbound_id)
+                                try:
+                                    robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                                except Exception:
+                                    robj = {}
+                                for c2 in (robj.get('clients') or []):
+                                    if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == target_exp and int(c2.get('totalGB', 0) or 0) == new_total:
+                                        return updated, "Success"
+                            last_err = f"HTTP {resp.status_code}: {(resp.text or '')[:160]}"
                         except requests.RequestException as e:
                             last_err = str(e)
                             continue
