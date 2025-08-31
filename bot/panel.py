@@ -2186,6 +2186,11 @@ class MarzneshinAPI(BasePanelAPI):
             return []
 
     def rotate_user_key_on_inbound(self, inbound_id: int, username: str):
+        # Ensure we are logged in before attempting update
+        try:
+            self.get_token()
+        except Exception:
+            pass
         inbound = self._fetch_inbound_detail(inbound_id)
         if not inbound:
             return None
@@ -2212,19 +2217,43 @@ class MarzneshinAPI(BasePanelAPI):
             if not updated:
                 return None
             # Push update via API
-            settings_payload = _json.dumps({"clients": [updated]})
-            payload = {"id": int(inbound_id), "settings": settings_payload}
-            for ep in [
+            settings_obj = {"clients": [updated]}
+            settings_payload = _json.dumps(settings_obj)
+            json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
+            endpoints = [
+                "/xui/API/inbounds/updateClient",
+                "/panel/API/inbounds/updateClient",
                 "/xui/api/inbounds/updateClient",
                 "/panel/api/inbounds/updateClient",
                 "/xui/api/inbound/updateClient",
-            ]:
+            ]
+            # Try multiple formats per endpoint
+            for ep in endpoints:
                 try:
-                    resp = self.session.post(f"{self.base_url}{ep}", headers={'Content-Type': 'application/json'}, json=payload, timeout=15)
+                    # A) JSON with settings string
+                    payload_a = {"id": int(inbound_id), "settings": settings_payload}
+                    resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_a, timeout=15)
                     if resp.status_code in (200, 201):
                         return updated
                 except requests.RequestException:
-                    continue
+                    pass
+                try:
+                    # B) form-urlencoded with settings
+                    payload_b = {"id": str(int(inbound_id)), "settings": settings_payload}
+                    resp = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_b, timeout=15)
+                    if resp.status_code in (200, 201):
+                        return updated
+                except requests.RequestException:
+                    pass
+                try:
+                    # C) JSON with clients array
+                    payload_c = {"id": int(inbound_id), "clients": [updated]}
+                    resp = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_c, timeout=15)
+                    if resp.status_code in (200, 201):
+                        return updated
+                except requests.RequestException:
+                    pass
             return None
         except Exception:
             return None

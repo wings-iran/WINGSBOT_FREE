@@ -378,8 +378,13 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             ok = (r.status_code in (200, 201, 202, 204))
         except Exception:
             ok = False
-        # 3x-UI rotate on specific inbound id first
+        # 3x-UI rotate on specific inbound id first (ensure login)
         if not ok and (order.get('xui_inbound_id') and hasattr(panel_api, 'rotate_user_key_on_inbound')):
+            if hasattr(panel_api, 'get_token'):
+                try:
+                    panel_api.get_token()
+                except Exception:
+                    pass
             try:
                 updated = panel_api.rotate_user_key_on_inbound(int(order['xui_inbound_id']), order['marzban_username'])
                 ok = bool(updated)
