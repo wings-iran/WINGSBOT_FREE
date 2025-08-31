@@ -17,6 +17,7 @@ try:
     import qrcode
 except Exception:
     qrcode = None
+import time
 
 # Normalize Persian/Arabic digits to ASCII
 _DIGIT_MAP = str.maketrans({
@@ -387,7 +388,13 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     if inbounds:
                         ib_id = inbounds[0].get('id')
                 if ib_id is not None:
-                    confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                    # Try multiple times to build configs
+                    confs = []
+                    for _ in range(3):
+                        confs = panel_api.get_configs_for_user_on_inbound(ib_id, order['marzban_username']) or []
+                        if confs:
+                            break
+                        time.sleep(0.8)
                     if confs:
                         cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
                         sent = False
@@ -404,7 +411,7 @@ async def revoke_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                             await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد:\n" + cfg_text), parse_mode=ParseMode.HTML)
                         return ConversationHandler.END
                     else:
-                        await query.answer("ساخت کانفیگ ناموفق بود - چند لحظه بعد دوباره تلاش کنید", show_alert=True)
+                        await context.bot.send_message(chat_id=query.message.chat_id, text=("\U0001F511 کلید جدید صادر شد، چند لحظه بعد ‘دریافت لینک مجدد’ را بزنید."), parse_mode=ParseMode.HTML)
                         return ConversationHandler.END
             except Exception:
                 pass
