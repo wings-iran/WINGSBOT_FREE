@@ -1195,62 +1195,32 @@ class ThreeXuiAPI(BasePanelAPI):
         if not self.get_token():
             return None, "خطا در ورود به پنل 3x-UI"
         try:
-            endpoints = [
-                f"{self.base_url}/xui/api/inbounds/list",
-                f"{self.base_url}/xui/api/inbounds",
-            ]
-            last_error = None
-            for attempt in range(2):  # try once, then re-login and try again
-                for url in endpoints:
-                    resp = self.session.get(url, headers=self._json_headers, timeout=12)
-                    if resp.status_code != 200:
-                        last_error = f"HTTP {resp.status_code}"
-                        continue
-                    ctype = resp.headers.get('content-type', '').lower()
-                    body = resp.text or ''
-                    if ('application/json' not in ctype) and not (body.strip().startswith('{') or body.strip().startswith('[')):
-                        last_error = "پاسخ JSON معتبر نیست (ممکن است هنوز لاگین نشده باشد)"
-                        continue
-                    try:
-                        data = resp.json()
-                    except ValueError as ve:
-                        last_error = f"JSON parse error: {ve}"
-                        continue
-                    items = None
-                    if isinstance(data, list):
-                        items = data
-                    elif isinstance(data, dict):
-                        items = data.get('obj') if isinstance(data.get('obj'), list) else None
-                        if items is None:
-                            # fallback: first list-like value
-                            for k, v in data.items():
-                                if isinstance(v, list):
-                                    items = v
-                                    break
-                    if not isinstance(items, list):
-                        last_error = "ساختار JSON لیست اینباند قابل تشخیص نیست"
-                        continue
-                    inbounds = []
-                    for it in items:
-                        if not isinstance(it, dict):
-                            continue
-                        inbounds.append({
-                            'id': it.get('id'),
-                            'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                            'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                            'port': it.get('port') or it.get('listen_port') or 0,
-                        })
-                    return inbounds, "Success"
-                # retry: re-login once if first pass failed
-                if attempt == 0:
-                    self.get_token()
-            if last_error:
-                logger.error(f"3x-UI list_inbounds error: {last_error}")
-                return None, last_error
-            return None, "Unknown"
+            resp = self.session.get(
+                f"{self.base_url}/xui/API/inbounds/",
+                headers={'Accept': 'application/json'},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return None, f"HTTP {resp.status_code}"
+            data = resp.json()
+            items = data.get('obj') if isinstance(data, dict) else data
+            if not isinstance(items, list):
+                return None, "لیست اینباند نامعتبر است"
+            inbounds = []
+            for it in items:
+                inbounds.append({
+                    'id': it.get('id'),
+                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                    'port': it.get('port') or it.get('listen_port') or 0,
+                })
+            return inbounds, "Success"
         except requests.RequestException as e:
             logger.error(f"3x-UI list_inbounds error: {e}")
             return None, str(e)
+        except ValueError as ve:
+            logger.error(f"3x-UI JSON parse error for /xui/API/inbounds/: {ve}")
+            return None, "JSON parse error"
 
     def create_user_on_inbound(self, inbound_id: int, user_id: int, plan):
         if not self.get_token():
@@ -2148,6 +2118,160 @@ class TxUiAPI(BasePanelAPI):
                 continue
         return None
 
+    def get_configs_for_user_on_inbound(self, inbound_id: int, username: str, preferred_id: str = None) -> list:
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return []
+        # helper to find client by preferred id or email
+        def _find_client(inv):
+            s = inv.get('settings')
+            try:
+                obj = json.loads(s) if isinstance(s, str) else (s or {})
+            except Exception:
+                obj = {}
+            chosen = None
+            for c in (obj.get('clients') or []):
+                if preferred_id and (c.get('id') == preferred_id or c.get('uuid') == preferred_id):
+                    return c
+                if c.get('email') == username and chosen is None:
+                    chosen = c
+            return chosen
+        client = _find_client(inbound)
+        retries = 2
+        while client is None and retries > 0:
+            _time.sleep(0.7)
+            inbound = self._fetch_inbound_detail(inbound_id)
+            if not inbound:
+                break
+            client = _find_client(inbound)
+            retries -= 1
+        if not client:
+            return []
+        try:
+            settings_str = inbound.get('settings')
+            settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            proto = (inbound.get('protocol') or '').lower()
+            port = inbound.get('port') or inbound.get('listen_port') or 0
+            stream_raw = inbound.get('streamSettings') or inbound.get('stream_settings')
+            stream = json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+            network = (stream.get('network') or '').lower() or 'tcp'
+            security = (stream.get('security') or '').lower() or ''
+            sni = ''
+            if security == 'tls':
+                tls = stream.get('tlsSettings') or {}
+                sni = tls.get('serverName') or ''
+            elif security == 'reality':
+                reality = stream.get('realitySettings') or {}
+                sni = (reality.get('serverNames') or [''])[0]
+            path = ''
+            host_header = ''
+            service_name = ''
+            header_type = ''
+            if network == 'ws':
+                ws = stream.get('wsSettings') or {}
+                path = ws.get('path') or '/'
+                headers = ws.get('headers') or {}
+                host_header = headers.get('Host') or headers.get('host') or ''
+            elif network == 'tcp':
+                tcp = stream.get('tcpSettings') or {}
+                header = tcp.get('header') or {}
+                if (header.get('type') or '').lower() == 'http':
+                    header_type = 'http'
+                    req = header.get('request') or {}
+                    rp = req.get('path')
+                    if isinstance(rp, list) and rp:
+                        path = rp[0] or '/'
+                    elif isinstance(rp, str) and rp:
+                        path = rp
+                    else:
+                        path = '/'
+                    h = req.get('headers') or {}
+                    hh = h.get('Host') or h.get('host') or ''
+                    if isinstance(hh, list) and hh:
+                        host_header = hh[0]
+                    elif isinstance(hh, str):
+                        host_header = hh
+            if network == 'grpc':
+                grpc = stream.get('grpcSettings') or {}
+                service_name = grpc.get('serviceName') or ''
+            from urllib.parse import urlsplit as _us
+            parts = _us(getattr(self, 'sub_base', '') or self.base_url)
+            host = parts.hostname or ''
+            if not host:
+                host = host_header or sni or host
+            uuid_val = client.get('id') or client.get('uuid') or ''
+            passwd = client.get('password') or ''
+            name = username
+            configs = []
+            if proto == 'vless' and uuid_val:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'tcp' and header_type == 'http':
+                    qs.append('headerType=http')
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                else:
+                    qs.append('security=none')
+                flow = client.get('flow')
+                if flow:
+                    qs.append(f'flow={flow}')
+                query = '&'.join(qs)
+                uri = f"vless://{uuid_val}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            elif proto == 'vmess' and uuid_val:
+                vm = {
+                    "v": "2",
+                    "ps": name,
+                    "add": host,
+                    "port": str(port),
+                    "id": uuid_val,
+                    "aid": "0",
+                    "net": network,
+                    "type": "none",
+                    "host": host_header or sni or host,
+                    "path": path or "/",
+                    "tls": "tls" if security in ("tls","reality") else "",
+                    "sni": sni or ""
+                }
+                import base64 as _b64
+                b = _b64.b64encode(json.dumps(vm, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                configs.append(f"vmess://{b}")
+            elif proto == 'trojan' and passwd:
+                qs = []
+                if network:
+                    qs.append(f'type={network}')
+                if network == 'ws':
+                    if path:
+                        qs.append(f'path={path}')
+                    if host_header:
+                        qs.append(f'host={host_header}')
+                if network == 'grpc' and service_name:
+                    qs.append(f'serviceName={service_name}')
+                if security:
+                    qs.append(f'security={security}')
+                    if sni:
+                        qs.append(f'sni={sni}')
+                query = '&'.join(qs)
+                uri = f"trojan://{passwd}@{host}:{port}?{query}#{name}"
+                configs.append(uri)
+            return configs
+        except Exception:
+            return []
+
     async def renew_user_in_panel(self, username, plan):
         if not self.get_token():
             return None, "خطا در ورود به پنل TX-UI"
@@ -2199,6 +2323,150 @@ class TxUiAPI(BasePanelAPI):
                             continue
                     return None, "به‌روزرسانی کلاینت ناموفق بود"
         return None, "کلاینت برای تمدید یافت نشد"
+
+    def renew_user_on_inbound(self, inbound_id: int, username: str, add_gb: float, add_days: int):
+        if not self.get_token():
+            return None, "خطا در ورود به پنل TX-UI"
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return None, "اینباند یافت نشد"
+        try:
+            now_ms = int(datetime.now().timestamp() * 1000)
+            settings_str = inbound.get('settings')
+            try:
+                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            except Exception:
+                settings_obj = {}
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                return None, "ساختار کلاینت‌ها نامعتبر است"
+            updated = None
+            cur_total = 0
+            cur_exp_raw = 0
+            uuid_old = ''
+            for c in clients:
+                if c.get('email') == username:
+                    current_exp = int(c.get('expiryTime', 0) or 0)
+                    cur_exp_raw = current_exp
+                    # TX-UI stores ms; detect if seconds
+                    is_ms = current_exp > 10**11
+                    now_unit = now_ms if is_ms else int(now_ms / 1000)
+                    add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
+                    base = max(current_exp, now_unit)
+                    target_exp = base + add_unit if add_unit > 0 else current_exp
+                    add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
+                    cur_total = int(c.get('totalGB', 0) or 0)
+                    new_total = cur_total + (add_bytes if add_bytes > 0 else 0)
+                    updated = dict(c)
+                    updated['expiryTime'] = target_exp
+                    updated['totalGB'] = new_total
+                    uuid_old = c.get('id') or c.get('uuid') or ''
+                    break
+            if not updated:
+                return None, "کلاینت یافت نشد"
+            # Try update endpoints, including /updateClient/{uuid}
+            base_eps = [
+                "/tx/api/inbounds/updateClient",
+                "/xui/api/inbounds/updateClient",
+                "/panel/api/inbounds/updateClient",
+            ]
+            endpoints = ([f"{e}/{uuid_old}" for e in base_eps] + base_eps) if uuid_old else base_eps
+            json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
+            settings_payload = json.dumps({"clients": [updated]})
+            payload_json = {"id": int(inbound_id), "settings": settings_payload}
+            payload_form = {"id": str(int(inbound_id)), "settings": settings_payload}
+            last_err = None
+            for ep in endpoints:
+                try:
+                    r = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_form, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_json, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    # Also try clients array
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json={"id": int(inbound_id), "clients": [updated]}, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
+                except requests.RequestException as e:
+                    last_err = str(e)
+                    continue
+            # Fallback: full inbound update (embed updated client)
+            full = self._fetch_inbound_detail(inbound_id) or {}
+            try:
+                cur_settings = json.loads(full.get('settings')) if isinstance(full.get('settings'), str) else (full.get('settings') or {})
+            except Exception:
+                cur_settings = {}
+            cur_clients = list(cur_settings.get('clients') or [])
+            for i, cc in enumerate(cur_clients):
+                if cc.get('email') == username:
+                    cur_clients[i] = updated
+                    break
+            else:
+                cur_clients.append(updated)
+            cur_settings['clients'] = cur_clients
+            settings_payload_str = json.dumps(cur_settings)
+            full_payload = {
+                "id": int(inbound_id),
+                "up": full.get('up', 0),
+                "down": full.get('down', 0),
+                "total": full.get('total', 0),
+                "remark": full.get('remark') or "",
+                "enable": bool(full.get('enable', True)),
+                "expiryTime": full.get('expiryTime', 0) or 0,
+                "listen": full.get('listen') or "",
+                "port": full.get('port') or 0,
+                "protocol": full.get('protocol') or full.get('type') or "vless",
+                "settings": settings_payload_str,
+                "streamSettings": full.get('streamSettings') or full.get('stream_settings') or "{}",
+                "sniffing": full.get('sniffing') or "{}",
+                "allocate": full.get('allocate') or "{}",
+            }
+            up_paths = [
+                f"/tx/api/inbounds/update/{int(inbound_id)}",
+                f"/xui/api/inbounds/update/{int(inbound_id)}",
+                f"/panel/api/inbounds/update/{int(inbound_id)}",
+            ]
+            for p in up_paths:
+                try:
+                    rr = self.session.post(f"{self.base_url}{p}", headers=json_headers, json=full_payload, timeout=15)
+                    if rr.status_code in (200, 201):
+                        ref2 = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj2 = json.loads(ref2.get('settings')) if isinstance(ref2.get('settings'), str) else (ref2.get('settings') or {})
+                        except Exception:
+                            robj2 = {}
+                        for c2 in (robj2.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                except requests.RequestException:
+                    continue
+            return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
+        except Exception as e:
+            return None, str(e)
 
 
 class MarzneshinAPI(BasePanelAPI):
@@ -2302,13 +2570,21 @@ class MarzneshinAPI(BasePanelAPI):
             except Exception:
                 pass
 
-        # Only form-encoded OAuth2 Password on /api/admins/token
+        # Try multiple token endpoints (form and JSON) commonly used by Marzneshin
         last_err = None
         for base in bases:
-            for path in ("/api/admins/token", "/api/admins/token/"):
-                url = f"{base}{path}"
+            candidates = [
+                (f"{base}/api/admins/token", "form"),
+                (f"{base}/api/admins/token/", "form"),
+                (f"{base}/api/auth/token", "form"),
+                (f"{base}/api/auth/login", "json"),
+            ]
+            for url, mode in candidates:
                 try:
-                    resp = self.session.post(url, data={"username": self.username, "password": self.password, "grant_type": "password"}, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
+                    if mode == "form":
+                        resp = self.session.post(url, data={"username": self.username, "password": self.password, "grant_type": "password"}, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}, timeout=12)
+                    else:
+                        resp = self.session.post(url, json={"username": self.username, "password": self.password}, headers={"Accept": "application/json", "Content-Type": "application/json"}, timeout=12)
                     if resp.status_code not in (200, 201):
                         last_err = f"HTTP {resp.status_code} @ {url}"
                         continue
@@ -2317,14 +2593,14 @@ class MarzneshinAPI(BasePanelAPI):
                     except ValueError:
                         last_err = f"non-JSON @ {url}"
                         continue
-                    token_val = data.get("access_token") or data.get("token")
+                    token_val = self._extract_token_from_obj(data)
                     if isinstance(token_val, str) and token_val:
                         if token_val.lower().startswith("bearer "):
                             token_val = token_val[7:].strip()
                         self.token = token_val.strip()
                         self._last_token_error = None
                         return True
-                    last_err = f"no access_token in response @ {url}"
+                    last_err = f"no token in response @ {url}"
                 except requests.RequestException:
                     last_err = f"request error @ {url}"
                     continue

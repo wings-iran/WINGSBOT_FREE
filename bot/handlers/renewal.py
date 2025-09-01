@@ -161,7 +161,7 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
                 renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
         else:
             renewed_user, message = await api.renew_user_in_panel(marz_username, plan)
-    elif panel_type in ('xui','x-ui','sanaei','alireza'):
+    elif panel_type in ('xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui'):
         inbound_id = int(order.get('xui_inbound_id') or 0)
         if inbound_id:
             add_gb = 0.0
@@ -174,7 +174,7 @@ async def process_renewal_for_order(order_id: int, plan_id: int, context: Contex
                 add_days = int(plan.get('duration_days', 0))
             except Exception:
                 add_days = 0
-            # Try updateClient/{uuid} first
+            # Try inbound-based renew first
             if hasattr(api, 'renew_user_on_inbound'):
                 renewed_user, message = api.renew_user_on_inbound(inbound_id, marz_username, add_gb, add_days)
             # Fallback to recreate strategy
