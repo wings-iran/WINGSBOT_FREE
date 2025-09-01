@@ -300,7 +300,12 @@ async def show_payment_method_selection(update: Update, context: ContextTypes.DE
         kb.append([InlineKeyboardButton("\U0001F4B0 رمزارز (Crypto)", callback_data='pay_method_crypto')])
     if pay_gateway:
         kb.append([InlineKeyboardButton("\U0001F6E0\uFE0F درگاه پرداخت", callback_data='pay_method_gateway')])
-    kb.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data='buy_config_main')])
+    # Back button depends on flow: purchase vs renewal
+    if context.user_data.get('renewing_order_id'):
+        order_id = context.user_data.get('renewing_order_id')
+        kb.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data=f"view_service_{order_id}")])
+    else:
+        kb.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data='buy_config_main')])
 
     extra = f"\n\n\U0001F4B0 موجودی کیف پول شما: {balance:,} تومان"
     if query:

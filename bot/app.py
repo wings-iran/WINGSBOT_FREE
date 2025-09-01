@@ -411,6 +411,12 @@ def build_application() -> Application:
                 CallbackQueryHandler(show_payment_info, pattern=r'^renew_confirm_purchase$'),
                 CallbackQueryHandler(renew_apply_discount_start, pattern=r'renew_apply_discount_start'),
             ],
+            SELECT_PAYMENT_METHOD: [
+                CallbackQueryHandler(show_payment_info_card, pattern=r'^pay_method_card$'),
+                CallbackQueryHandler(show_payment_info_crypto, pattern=r'^pay_method_crypto$'),
+                CallbackQueryHandler(show_payment_info_gateway, pattern=r'^pay_method_gateway$'),
+                CallbackQueryHandler(pay_method_wallet, pattern=r'^pay_method_wallet$'),
+            ],
             RENEW_AWAIT_DISCOUNT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_and_validate_discount_code)],
             RENEW_AWAIT_PAYMENT: [MessageHandler(filters.PHOTO | filters.Document.ALL, receive_renewal_payment)],
         },
