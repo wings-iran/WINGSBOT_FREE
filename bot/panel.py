@@ -2354,6 +2354,150 @@ class TxUiAPI(BasePanelAPI):
                     return None, "به‌روزرسانی کلاینت ناموفق بود"
         return None, "کلاینت برای تمدید یافت نشد"
 
+    def renew_user_on_inbound(self, inbound_id: int, username: str, add_gb: float, add_days: int):
+        if not self.get_token():
+            return None, "خطا در ورود به پنل TX-UI"
+        inbound = self._fetch_inbound_detail(inbound_id)
+        if not inbound:
+            return None, "اینباند یافت نشد"
+        try:
+            now_ms = int(datetime.now().timestamp() * 1000)
+            settings_str = inbound.get('settings')
+            try:
+                settings_obj = json.loads(settings_str) if isinstance(settings_str, str) else (settings_str or {})
+            except Exception:
+                settings_obj = {}
+            clients = settings_obj.get('clients') or []
+            if not isinstance(clients, list):
+                return None, "ساختار کلاینت‌ها نامعتبر است"
+            updated = None
+            cur_total = 0
+            cur_exp_raw = 0
+            uuid_old = ''
+            for c in clients:
+                if c.get('email') == username:
+                    current_exp = int(c.get('expiryTime', 0) or 0)
+                    cur_exp_raw = current_exp
+                    # TX-UI stores ms; detect if seconds
+                    is_ms = current_exp > 10**11
+                    now_unit = now_ms if is_ms else int(now_ms / 1000)
+                    add_unit = (int(add_days) * 86400 * (1000 if is_ms else 1)) if add_days and int(add_days) > 0 else 0
+                    base = max(current_exp, now_unit)
+                    target_exp = base + add_unit if add_unit > 0 else current_exp
+                    add_bytes = int(float(add_gb) * (1024 ** 3)) if add_gb and add_gb > 0 else 0
+                    cur_total = int(c.get('totalGB', 0) or 0)
+                    new_total = cur_total + (add_bytes if add_bytes > 0 else 0)
+                    updated = dict(c)
+                    updated['expiryTime'] = target_exp
+                    updated['totalGB'] = new_total
+                    uuid_old = c.get('id') or c.get('uuid') or ''
+                    break
+            if not updated:
+                return None, "کلاینت یافت نشد"
+            # Try update endpoints, including /updateClient/{uuid}
+            base_eps = [
+                "/tx/api/inbounds/updateClient",
+                "/xui/api/inbounds/updateClient",
+                "/panel/api/inbounds/updateClient",
+            ]
+            endpoints = ([f"{e}/{uuid_old}" for e in base_eps] + base_eps) if uuid_old else base_eps
+            json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}
+            form_headers = {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest'}
+            settings_payload = json.dumps({"clients": [updated]})
+            payload_json = {"id": int(inbound_id), "settings": settings_payload}
+            payload_form = {"id": str(int(inbound_id)), "settings": settings_payload}
+            last_err = None
+            for ep in endpoints:
+                try:
+                    r = self.session.post(f"{self.base_url}{ep}", headers=form_headers, data=payload_form, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json=payload_json, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    # Also try clients array
+                    r = self.session.post(f"{self.base_url}{ep}", headers=json_headers, json={"id": int(inbound_id), "clients": [updated]}, timeout=15)
+                    if r.status_code in (200, 201):
+                        ref = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj = json.loads(ref.get('settings')) if isinstance(ref.get('settings'), str) else (ref.get('settings') or {})
+                        except Exception:
+                            robj = {}
+                        for c2 in (robj.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                    last_err = f"HTTP {r.status_code}: {(r.text or '')[:160]}"
+                except requests.RequestException as e:
+                    last_err = str(e)
+                    continue
+            # Fallback: full inbound update (embed updated client)
+            full = self._fetch_inbound_detail(inbound_id) or {}
+            try:
+                cur_settings = json.loads(full.get('settings')) if isinstance(full.get('settings'), str) else (full.get('settings') or {})
+            except Exception:
+                cur_settings = {}
+            cur_clients = list(cur_settings.get('clients') or [])
+            for i, cc in enumerate(cur_clients):
+                if cc.get('email') == username:
+                    cur_clients[i] = updated
+                    break
+            else:
+                cur_clients.append(updated)
+            cur_settings['clients'] = cur_clients
+            settings_payload_str = json.dumps(cur_settings)
+            full_payload = {
+                "id": int(inbound_id),
+                "up": full.get('up', 0),
+                "down": full.get('down', 0),
+                "total": full.get('total', 0),
+                "remark": full.get('remark') or "",
+                "enable": bool(full.get('enable', True)),
+                "expiryTime": full.get('expiryTime', 0) or 0,
+                "listen": full.get('listen') or "",
+                "port": full.get('port') or 0,
+                "protocol": full.get('protocol') or full.get('type') or "vless",
+                "settings": settings_payload_str,
+                "streamSettings": full.get('streamSettings') or full.get('stream_settings') or "{}",
+                "sniffing": full.get('sniffing') or "{}",
+                "allocate": full.get('allocate') or "{}",
+            }
+            up_paths = [
+                f"/tx/api/inbounds/update/{int(inbound_id)}",
+                f"/xui/api/inbounds/update/{int(inbound_id)}",
+                f"/panel/api/inbounds/update/{int(inbound_id)}",
+            ]
+            for p in up_paths:
+                try:
+                    rr = self.session.post(f"{self.base_url}{p}", headers=json_headers, json=full_payload, timeout=15)
+                    if rr.status_code in (200, 201):
+                        ref2 = self._fetch_inbound_detail(inbound_id)
+                        try:
+                            robj2 = json.loads(ref2.get('settings')) if isinstance(ref2.get('settings'), str) else (ref2.get('settings') or {})
+                        except Exception:
+                            robj2 = {}
+                        for c2 in (robj2.get('clients') or []):
+                            if c2.get('email') == username and int(c2.get('expiryTime', 0) or 0) == updated['expiryTime'] and int(c2.get('totalGB', 0) or 0) == updated['totalGB']:
+                                return updated, "Success"
+                except requests.RequestException:
+                    continue
+            return None, (last_err or "به‌روزرسانی کلاینت ناموفق بود")
+        except Exception as e:
+            return None, str(e)
+
 
 class MarzneshinAPI(BasePanelAPI):
     """Marzneshin support via /api endpoints with Bearer token.
