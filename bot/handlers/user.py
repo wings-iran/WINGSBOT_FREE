@@ -44,7 +44,7 @@ def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list
         r = requests.get(sub_url, headers=headers, timeout=timeout_seconds)
         r.raise_for_status()
         raw = (r.text or '').strip()
-        if any(proto in raw for proto in ("vmess://","vless://","trojan://","ss://","hy2://")):
+        if any(proto in raw for proto in ("vmess://","vless://","trojan://","ss://","hy2://","hysteria2://","tuic://")):
             text = raw
         else:
             compact = "".join(raw.split())
@@ -57,7 +57,13 @@ def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list
             except Exception:
                 text = raw
         lines = [ln.strip() for ln in (text or '').splitlines()]
-        return [ln for ln in lines if ln and (ln.startswith('vmess://') or ln.startswith('vless://') or ln.startswith('trojan://') or ln.startswith('ss://') or ln.startswith('hy2://'))]
+        return [
+            ln for ln in lines
+            if ln and (
+                ln.startswith('vmess://') or ln.startswith('vless://') or ln.startswith('trojan://') or ln.startswith('ss://') or
+                ln.startswith('hy2://') or ln.startswith('hysteria2://') or ln.startswith('tuic://')
+            )
+        ]
     except Exception:
         return []
 
