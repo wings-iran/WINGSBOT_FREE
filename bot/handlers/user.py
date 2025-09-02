@@ -1057,6 +1057,8 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
+    # Mark intent so direct uploads are accepted even if button wasn't pressed
+    context.user_data['reseller_intent'] = True
     settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
     if settings.get('reseller_enabled', '1') != '1':
         await query.message.edit_text("قابلیت نمایندگی موقتا غیرفعال است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]))
@@ -1094,6 +1096,7 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reseller_pay_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
+    context.user_data['reseller_intent'] = True
     settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
     fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
     text = (
@@ -1255,7 +1258,7 @@ async def reseller_upload_start_crypto(update: Update, context: ContextTypes.DEF
 
 async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Accept if explicitly awaiting OR if payment context exists (fallback when user skips the button)
-    if context.user_data.get('awaiting') != 'reseller_upload' and not context.user_data.get('reseller_payment'):
+    if context.user_data.get('awaiting') != 'reseller_upload' and not (context.user_data.get('reseller_payment') or context.user_data.get('reseller_intent')):
         return ConversationHandler.END
     user_id = update.effective_user.id
     pay = context.user_data.get('reseller_payment') or {}
@@ -1285,6 +1288,7 @@ async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("درخواست نمایندگی ثبت شد و پس از تایید ادمین فعال می‌شود.")
     context.user_data.pop('awaiting', None)
     context.user_data.pop('reseller_payment', None)
+    context.user_data.pop('reseller_intent', None)
     return ConversationHandler.END
 
 async def wallet_upload_start_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
