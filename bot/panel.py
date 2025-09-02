@@ -353,32 +353,70 @@ class XuiAPI(BasePanelAPI):
         if not self.get_token():
             return None, "خطا در ورود به پنل X-UI"
         try:
-            resp = self.session.get(
+            endpoints = [
                 f"{self.base_url}/xui/API/inbounds/",
-                headers={'Accept': 'application/json'},
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                return None, f"HTTP {resp.status_code}"
-            data = resp.json()
-            items = data.get('obj') if isinstance(data, dict) else data
-            if not isinstance(items, list):
-                return None, "لیست اینباند نامعتبر است"
-            inbounds = []
-            for it in items:
-                inbounds.append({
-                    'id': it.get('id'),
-                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                    'port': it.get('port') or it.get('listen_port') or 0,
-                })
-            return inbounds, "Success"
+                f"{self.base_url}/panel/API/inbounds/",
+                f"{self.base_url}/xui/api/inbounds/list",
+                f"{self.base_url}/xui/api/inbounds",
+                f"{self.base_url}/panel/api/inbounds/list",
+                f"{self.base_url}/panel/api/inbounds",
+            ]
+            last_error = None
+            for attempt in range(2):
+                for url in endpoints:
+                    try:
+                        resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
+                    except requests.RequestException as e:
+                        last_error = str(e)
+                        continue
+                    if resp.status_code != 200:
+                        last_error = f"HTTP {resp.status_code} @ {url}"
+                        continue
+                    ctype = (resp.headers.get('content-type') or '').lower()
+                    body = resp.text or ''
+                    if ('application/json' not in ctype) and not (body.strip().startswith('{') or body.strip().startswith('[')):
+                        last_error = f"پاسخ JSON معتبر نیست @ {url}"
+                        continue
+                    try:
+                        data = resp.json()
+                    except ValueError as ve:
+                        last_error = f"JSON parse error @ {url}: {ve}"
+                        continue
+                    items = None
+                    if isinstance(data, dict):
+                        if isinstance(data.get('obj'), list):
+                            items = data.get('obj')
+                        elif isinstance(data.get('items'), list):
+                            items = data.get('items')
+                        else:
+                            # fallback: first list value
+                            for v in data.values():
+                                if isinstance(v, list):
+                                    items = v
+                                    break
+                    elif isinstance(data, list):
+                        items = data
+                    if not isinstance(items, list):
+                        last_error = f"ساختار JSON لیست اینباند قابل تشخیص نیست @ {url}"
+                        continue
+                    inbounds = []
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        inbounds.append({
+                            'id': it.get('id'),
+                            'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                            'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                            'port': it.get('port') or it.get('listen_port') or 0,
+                        })
+                    return inbounds, "Success"
+                # retry after re-login once
+                if attempt == 0:
+                    self.get_token()
+            return None, (last_error or 'Unknown')
         except requests.RequestException as e:
             logger.error(f"X-UI list_inbounds error: {e}")
             return None, str(e)
-        except ValueError as ve:
-            logger.error(f"X-UI JSON parse error for /xui/API/inbounds/: {ve}")
-            return None, "JSON parse error"
 
     def create_user_on_inbound(self, inbound_id: int, user_id: int, plan):
         if not self.get_token():
@@ -1229,32 +1267,65 @@ class ThreeXuiAPI(BasePanelAPI):
         if not self.get_token():
             return None, "خطا در ورود به پنل 3x-UI"
         try:
-            resp = self.session.get(
+            endpoints = [
+                f"{self.base_url}/xui/api/inbounds/list",
+                f"{self.base_url}/xui/api/inbounds",
+                f"{self.base_url}/panel/api/inbounds/list",
+                f"{self.base_url}/panel/api/inbounds",
                 f"{self.base_url}/xui/API/inbounds/",
-                headers={'Accept': 'application/json'},
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                return None, f"HTTP {resp.status_code}"
-            data = resp.json()
-            items = data.get('obj') if isinstance(data, dict) else data
-            if not isinstance(items, list):
-                return None, "لیست اینباند نامعتبر است"
-            inbounds = []
-            for it in items:
-                inbounds.append({
-                    'id': it.get('id'),
-                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
-                    'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                    'port': it.get('port') or it.get('listen_port') or 0,
-                })
-            return inbounds, "Success"
+                f"{self.base_url}/panel/API/inbounds/",
+            ]
+            last_error = None
+            for attempt in range(2):
+                for url in endpoints:
+                    try:
+                        resp = self.session.get(url, headers=self._json_headers, timeout=12)
+                    except requests.RequestException as e:
+                        last_error = str(e)
+                        continue
+                    if resp.status_code != 200:
+                        last_error = f"HTTP {resp.status_code} @ {url}"
+                        continue
+                    ctype = (resp.headers.get('content-type') or '').lower()
+                    body = resp.text or ''
+                    if ('application/json' not in ctype) and not (body.strip().startswith('{') or body.strip().startswith('[')):
+                        last_error = f"پاسخ JSON معتبر نیست @ {url}"
+                        continue
+                    try:
+                        data = resp.json()
+                    except ValueError as ve:
+                        last_error = f"JSON parse error @ {url}: {ve}"
+                        continue
+                    items = None
+                    if isinstance(data, dict):
+                        items = data.get('obj') if isinstance(data.get('obj'), list) else None
+                        if items is None:
+                            for v in data.values():
+                                if isinstance(v, list):
+                                    items = v
+                                    break
+                    elif isinstance(data, list):
+                        items = data
+                    if not isinstance(items, list):
+                        last_error = f"ساختار JSON لیست اینباند قابل تشخیص نیست @ {url}"
+                        continue
+                    inbounds = []
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        inbounds.append({
+                            'id': it.get('id'),
+                            'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                            'protocol': it.get('protocol') or it.get('type') or 'unknown',
+                            'port': it.get('port') or it.get('listen_port') or 0,
+                        })
+                    return inbounds, "Success"
+                if attempt == 0:
+                    self.get_token()
+            return None, (last_error or 'Unknown')
         except requests.RequestException as e:
             logger.error(f"3x-UI list_inbounds error: {e}")
             return None, str(e)
-        except ValueError as ve:
-            logger.error(f"3x-UI JSON parse error for /xui/API/inbounds/: {ve}")
-            return None, "JSON parse error"
 
     def create_user_on_inbound(self, inbound_id: int, user_id: int, plan):
         if not self.get_token():
