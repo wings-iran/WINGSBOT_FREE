@@ -54,7 +54,7 @@ from .handlers.admin import (
     admin_set_trial_inbound_start, admin_set_trial_inbound_choose,
     admin_toggle_pay_card, admin_toggle_pay_crypto, admin_toggle_pay_gateway, admin_toggle_gateway_type,
     admin_xui_choose_inbound,
-    admin_reseller_menu, admin_toggle_reseller, admin_reseller_requests, admin_reseller_set_value_start, admin_reseller_set_value_save, admin_reseller_approve, admin_reseller_reject,
+    admin_reseller_menu, admin_toggle_reseller, admin_reseller_requests, admin_reseller_set_value_start, admin_reseller_set_value_save, admin_reseller_approve, admin_reseller_reject, admin_reseller_delete_start, admin_reseller_delete_receive,
 )
 from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, composite_upload_router, refresh_service_link, revoke_key, reseller_menu, reseller_pay_start, reseller_pay_card, reseller_pay_crypto, reseller_pay_gateway, reseller_verify_gateway, reseller_upload_start_card, reseller_upload_start_crypto, reseller_upload_router
 from .handlers.purchase import (
@@ -395,6 +395,9 @@ def build_application() -> Application:
     # Reseller approvals (global)
     application.add_handler(CallbackQueryHandler(admin_reseller_approve, pattern=r'^reseller_approve_\d+$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_reseller_reject, pattern=r'^reseller_reject_\d+$'), group=3)
+    application.add_handler(CallbackQueryHandler(admin_reseller_menu, pattern=r'^admin_reseller_menu$'), group=3)
+    application.add_handler(CallbackQueryHandler(admin_reseller_delete_start, pattern=r'^admin_reseller_delete_start$'), group=3)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reseller_delete_receive), group=-2)
     # Reseller user flows
     application.add_handler(CallbackQueryHandler(reseller_menu, pattern=r'^reseller_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(reseller_pay_start, pattern=r'^reseller_pay_start$'), group=3)

@@ -1233,7 +1233,7 @@ async def admin_reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         [InlineKeyboardButton(("غیرفعال کردن" if enabled else "فعال کردن"), callback_data=f"toggle_reseller_{0 if enabled else 1}")],
         [InlineKeyboardButton("تنظیم هزینه", callback_data="set_reseller_fee"), InlineKeyboardButton("تنظیم درصد", callback_data="set_reseller_percent")],
         [InlineKeyboardButton("تنظیم مدت", callback_data="set_reseller_days"), InlineKeyboardButton("تنظیم سقف خرید", callback_data="set_reseller_cap")],
-        [InlineKeyboardButton("درخواست‌های نمایندگی", callback_data="admin_reseller_requests")],
+        [InlineKeyboardButton("حذف نمایندگی", callback_data="admin_reseller_delete_start")],
         [InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_settings_manage")],
     ]
     await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(kb))
@@ -1289,6 +1289,51 @@ async def admin_reseller_set_value_save(update: Update, context: ContextTypes.DE
     execute_db("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
     context.user_data.pop('reseller_edit_key', None)
     await update.message.reply_text("ذخیره شد.")
+    # Return to reseller menu
+    fake_query = type('obj', (object,), {
+        'data': 'admin_reseller_menu',
+        'message': update.message,
+        'answer': (lambda *args, **kwargs: asyncio.sleep(0)),
+    })
+    fake_update = type('obj', (object,), {'callback_query': fake_query, 'effective_user': update.effective_user})
+    return await admin_reseller_menu(fake_update, context)
+
+
+async def admin_reseller_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data['reseller_delete'] = True
+    await _safe_edit_text(query.message, "آیدی عددی کاربر را وارد کنید تا نمایندگی او غیرفعال شود:")
+    return SETTINGS_MENU
+
+
+async def admin_reseller_delete_receive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if not context.user_data.get('reseller_delete'):
+        return ConversationHandler.END
+    txt = (update.message.text or '').strip()
+    # Normalize digits
+    uid_str = _normalize_digits(txt)
+    try:
+        uid = int(uid_str)
+    except Exception:
+        await update.message.reply_text("آیدی نامعتبر است. فقط عدد وارد کنید.")
+        return ConversationHandler.END
+    # Deactivate reseller
+    row = query_db("SELECT 1 FROM resellers WHERE user_id = ?", (uid,), one=True)
+    if not row:
+        await update.message.reply_text("نمایندگی برای این آیدی یافت نشد.")
+        context.user_data.pop('reseller_delete', None)
+        return ConversationHandler.END
+    execute_db("UPDATE resellers SET status='inactive' WHERE user_id = ?", (uid,))
+    try:
+        await update.message.reply_text("نمایندگی کاربر غیرفعال شد.")
+    except Exception:
+        pass
+    try:
+        await update.get_bot().send_message(chat_id=uid, text="نمایندگی شما توسط ادمین غیرفعال شد.")
+    except Exception:
+        pass
+    context.user_data.pop('reseller_delete', None)
     # Return to reseller menu
     fake_query = type('obj', (object,), {
         'data': 'admin_reseller_menu',
