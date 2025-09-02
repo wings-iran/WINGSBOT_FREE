@@ -346,9 +346,7 @@ def build_application() -> Application:
             AWAIT_DISCOUNT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_and_validate_discount_code)],
             AWAIT_PAYMENT_SCREENSHOT: [MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, receive_payment_screenshot)],
         },
-        fallbacks=[
-            CallbackQueryHandler(start_command, pattern='^start_main$'),
-        ],
+        fallbacks=[],
         allow_reentry=True,
         per_message=False,
     )
@@ -364,10 +362,7 @@ def build_application() -> Application:
             RENEW_AWAIT_DISCOUNT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_and_validate_discount_code)],
             RENEW_AWAIT_PAYMENT: [MessageHandler(filters.PHOTO | filters.Document.ALL, receive_renewal_payment)],
         },
-        fallbacks=[
-            CallbackQueryHandler(start_command, pattern='^start_main$'),
-            CallbackQueryHandler(show_specific_service_details, pattern=r'^view_service_'),
-        ],
+        fallbacks=[CallbackQueryHandler(show_specific_service_details, pattern=r'^view_service_')],
         allow_reentry=True,
         per_message=False,
     )
@@ -525,7 +520,7 @@ def build_application() -> Application:
         states={
             SUPPORT_AWAIT_TICKET: [MessageHandler(filters.ALL & ~filters.COMMAND, ticket_receive_message)],
         },
-        fallbacks=[CallbackQueryHandler(start_command, pattern='^start_main$')],
+        fallbacks=[],
         allow_reentry=True,
         per_message=False,
     )
