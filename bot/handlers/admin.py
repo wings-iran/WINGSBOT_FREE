@@ -53,6 +53,56 @@ def _is_admin(user_id: int) -> bool:
     row = query_db("SELECT 1 FROM admins WHERE user_id = ?", (user_id,), one=True)
     return bool(row)
 
+
+async def admin_set_trial_inbound_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    # Explain feature and list inbounds for XUI-like panels only
+    msg = (
+        "انتخاب اینباند کانفیگ تست\n\n"
+        "این گزینه فقط برای پنل‌های XUI/3xUI/Alireza/TX-UI کاربرد دارد.\n"
+        "اینباندی را انتخاب کنید تا کانفیگ‌های تست روی همان اینباند ساخته شوند."
+    )
+    # Choose panel first: use selected free_trial_panel_id or ask user to pick if not set
+    sel = query_db("SELECT value FROM settings WHERE key='free_trial_panel_id'", one=True)
+    panel_id = int((sel.get('value') or 0)) if sel and str(sel.get('value') or '').isdigit() else None
+    if not panel_id:
+        await _safe_edit_text(query.message, "ابتدا از گزینه 'انتخاب پنل ساخت تست' یک پنل انتخاب کنید.")
+        return SETTINGS_MENU
+    p = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
+    if not p:
+        await _safe_edit_text(query.message, "پنل انتخاب‌شده یافت نشد. دوباره انتخاب کنید.")
+        return SETTINGS_MENU
+    ptype = (p.get('panel_type') or '').lower()
+    if ptype not in ('xui','x-ui','3xui','3x-ui','alireza','txui','tx-ui','tx ui'):
+        await _safe_edit_text(query.message, "این تنظیم فقط برای پنل‌های XUI/3xUI/Alireza/TX-UI است.")
+        return SETTINGS_MENU
+    api = VpnPanelAPI(panel_id=panel_id)
+    inbounds, msg_err = getattr(api, 'list_inbounds', lambda: (None,'NA'))()
+    if not inbounds:
+        await _safe_edit_text(query.message, f"لیست اینباندها دریافت نشد: {msg_err}")
+        return SETTINGS_MENU
+    kb = []
+    for ib in inbounds[:60]:
+        title = f"{ib.get('remark') or ib.get('tag') or ib.get('protocol','inbound')}:{ib.get('port','')}"
+        kb.append([InlineKeyboardButton(title, callback_data=f"set_trial_inbound_{ib.get('id')}")])
+    kb.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_settings_manage")])
+    await _safe_edit_text(query.message, msg, reply_markup=InlineKeyboardMarkup(kb))
+    return SETTINGS_MENU
+
+
+async def admin_set_trial_inbound_choose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    inbound_id = query.data.split('_')[-1]
+    if not inbound_id.isdigit():
+        await query.answer("شناسه نامعتبر", show_alert=True)
+        return SETTINGS_MENU
+    # Persist setting
+    execute_db("INSERT OR REPLACE INTO settings (key, value) VALUES ('free_trial_inbound_id', ?)", (inbound_id,))
+    await query.answer("اینباند تست ذخیره شد", show_alert=True)
+    return await admin_settings_manage(update, context)
+
 def _fetch_subscription_configs(sub_url: str, timeout_seconds: int = 15) -> list[str]:
     """Fetch subscription content and return a list of config URIs.
 
@@ -1118,6 +1168,7 @@ async def admin_settings_manage(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton(trial_button_text, callback_data=trial_button_callback)],
         [InlineKeyboardButton("روز/حجم تست", callback_data="set_trial_days"), InlineKeyboardButton("ویرایش متن پرداخت", callback_data="set_payment_text")],
         [InlineKeyboardButton("انتخاب پنل ساخت تست", callback_data="set_trial_panel_start")],
+        [InlineKeyboardButton("اینباند کانفیگ تست", callback_data="set_trial_inbound_start")],
         [InlineKeyboardButton("تنظیم درصد کمیسیون معرفی", callback_data="set_ref_percent_start")],
         [InlineKeyboardButton("\U0001F4B3 مدیریت کارت‌ها", callback_data="admin_cards_menu"), InlineKeyboardButton("\U0001F4B0 مدیریت ولت‌ها", callback_data="admin_wallets_menu")],
         [InlineKeyboardButton("\U0001F4B8 درخواست‌های شارژ کیف پول", callback_data="admin_wallet_tx_menu")],

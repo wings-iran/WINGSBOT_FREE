@@ -110,7 +110,16 @@ async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_
         pass
 
     try:
-        marzban_username, config_link, message = await panel_api.create_user(user_id, trial_plan)
+        # For XUI-like panels, if a trial inbound is set, create on that inbound directly
+        prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (first_panel['id'],), one=True) or {}
+        ptype = (prow.get('panel_type') or '').lower()
+        trial_inb_row = query_db("SELECT value FROM settings WHERE key='free_trial_inbound_id'", one=True)
+        trial_inb = int(trial_inb_row.get('value')) if (trial_inb_row and str(trial_inb_row.get('value') or '').isdigit()) else None
+        if ptype in ('xui','x-ui','3xui','3x-ui','alireza','txui','tx-ui','tx ui') and trial_inb is not None and hasattr(panel_api, 'create_user_on_inbound'):
+            username_created, sub_link, _msg = panel_api.create_user_on_inbound(trial_inb, user_id, trial_plan)
+            marzban_username, config_link, message = username_created, sub_link, _msg
+        else:
+            marzban_username, config_link, message = await panel_api.create_user(user_id, trial_plan)
     except Exception as e:
         await query.message.edit_text(
             f"❌ ایجاد کاربر تست ناموفق بود.\nجزئیات: {e}",
@@ -122,10 +131,27 @@ async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_
         plan_id_row = query_db("SELECT id FROM plans LIMIT 1", one=True)
         plan_id = plan_id_row['id'] if plan_id_row else -1
 
-        execute_db(
-            "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, plan_id, first_panel['id'], 'approved', marzban_username, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        )
+        # Persist order; for XUI-like with selected inbound, save xui_inbound_id too
+        xui_inb = None
+        try:
+            prow = query_db("SELECT panel_type FROM panels WHERE id = ?", (first_panel['id'],), one=True) or {}
+            ptype = (prow.get('panel_type') or '').lower()
+            if ptype in ('xui','x-ui','3xui','3x-ui','alireza','txui','tx-ui','tx ui'):
+                trial_inb_row = query_db("SELECT value FROM settings WHERE key='free_trial_inbound_id'", one=True)
+                if trial_inb_row and str(trial_inb_row.get('value') or '').isdigit():
+                    xui_inb = int(trial_inb_row.get('value'))
+        except Exception:
+            xui_inb = None
+        if xui_inb is not None:
+            execute_db(
+                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, xui_inbound_id, panel_type) VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?))",
+                (user_id, plan_id, first_panel['id'], 'approved', marzban_username, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), xui_inb, first_panel['id']),
+            )
+        else:
+            execute_db(
+                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, panel_type) VALUES (?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?))",
+                (user_id, plan_id, first_panel['id'], 'approved', marzban_username, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), first_panel['id']),
+            )
         execute_db("INSERT INTO free_trials (user_id, timestamp) VALUES (?, ?)", (user_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
         text = (
