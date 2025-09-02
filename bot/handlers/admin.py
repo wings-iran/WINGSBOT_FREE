@@ -1673,13 +1673,22 @@ async def admin_panel_inbounds_menu(update: Update, context: ContextTypes.DEFAUL
     panel = query_db("SELECT name, panel_type FROM panels WHERE id = ?", (panel_id,), one=True)
     inbounds = query_db("SELECT id, protocol, tag FROM panel_inbounds WHERE panel_id = ? ORDER BY id", (panel_id,))
 
-    # Auto-discover inbounds for Marzban panels and insert if DB empty
+    # Auto-discover inbounds for Marzban/MARZneshin panels and insert if DB empty
     if (not inbounds) or len(inbounds) == 0:
         try:
             prow = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True)
             if prow and (prow.get('panel_type') or 'marzban').lower() in ('marzban', 'marzneshin'):
                 api = VpnPanelAPI(panel_id=panel_id)
                 found, msg = getattr(api, 'list_inbounds', lambda: (None, 'NA'))()
+                # Fallback: try Marzneshin API style if Marzban paths returned 404/empty
+                if not found:
+                    try:
+                        from ..panel import MarzneshinAPI as _MZ
+                        alt = _MZ(prow)
+                        found, msg = alt.list_inbounds()
+                        logger.info(f"Auto-discover fallback (apiv2) used for panel {panel_id}: {bool(found)}")
+                    except Exception as _e:
+                        logger.error(f"Auto-discover apiv2 fallback failed: {_e}")
                 if found:
                     for ib in found[:100]:
                         proto = (ib.get('protocol') or '').lower()
