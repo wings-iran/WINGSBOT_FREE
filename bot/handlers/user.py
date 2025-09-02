@@ -1124,6 +1124,7 @@ async def reseller_pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("ارسال اسکرین‌شات", callback_data='reseller_upload_start_card')],[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]])
     await query.message.edit_text("\n\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb)
     context.user_data['reseller_payment'] = {'method': 'card', 'amount': fee}
+    context.user_data['awaiting'] = 'reseller_upload'
     return RESELLER_AWAIT_UPLOAD
 
 
@@ -1143,6 +1144,7 @@ async def reseller_pay_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("ارسال اسکرین‌شات", callback_data='reseller_upload_start_crypto')],[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]])
     await query.message.edit_text("\n\n".join(lines), reply_markup=kb)
     context.user_data['reseller_payment'] = {'method': 'crypto', 'amount': fee}
+    context.user_data['awaiting'] = 'reseller_upload'
     return RESELLER_AWAIT_UPLOAD
 
 
@@ -1165,6 +1167,8 @@ async def reseller_pay_gateway(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.message.edit_text("خطا در ایجاد لینک زرین‌پال.")
             return ConversationHandler.END
         context.user_data['reseller_gateway'] = {'type': 'zarinpal', 'authority': authority, 'amount_rial': amount_rial}
+        context.user_data['reseller_payment'] = {'method': 'gateway', 'amount': fee}
+        context.user_data['awaiting'] = 'reseller_upload'
         kb = [
             [InlineKeyboardButton("\U0001F6D2 رفتن به صفحه پرداخت", url=start_url)],
             [InlineKeyboardButton("\U0001F50D بررسی پرداخت", callback_data='reseller_verify_gateway')],
@@ -1184,6 +1188,8 @@ async def reseller_pay_gateway(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.message.edit_text("خطا در ایجاد لینک آقای پرداخت.")
             return ConversationHandler.END
         context.user_data['reseller_gateway'] = {'type': 'aghapay', 'amount_rial': amount_rial, 'transid': pay_url.split('/')[-1]}
+        context.user_data['reseller_payment'] = {'method': 'gateway', 'amount': fee}
+        context.user_data['awaiting'] = 'reseller_upload'
         kb = [
             [InlineKeyboardButton("\U0001F6D2 رفتن به صفحه پرداخت", url=pay_url)],
             [InlineKeyboardButton("\U0001F50D بررسی پرداخت", callback_data='reseller_verify_gateway')],
