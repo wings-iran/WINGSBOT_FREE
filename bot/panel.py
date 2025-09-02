@@ -161,7 +161,24 @@ class MarzbanAPI(BasePanelAPI):
             if r.status_code == 404:
                 return None, "کاربر یافت نشد"
             r.raise_for_status()
-            return r.json(), "Success"
+            data = r.json()
+            # Try to compute used_traffic if not provided
+            try:
+                used = int(data.get('used_traffic', 0) or 0)
+            except Exception:
+                used = 0
+            if used == 0:
+                try:
+                    down = int(data.get('download', 0) or data.get('downlink', 0) or 0)
+                except Exception:
+                    down = 0
+                try:
+                    up = int(data.get('upload', 0) or data.get('uplink', 0) or 0)
+                except Exception:
+                    up = 0
+                used = down + up
+                data['used_traffic'] = used
+            return data, "Success"
         except requests.RequestException as e:
             logger.error(f"Failed to get user {marzban_username}: {e}")
             return None, f"خطای پنل: {e}"
@@ -498,6 +515,20 @@ class XuiAPI(BasePanelAPI):
             for c in clients:
                 if c.get('email') == username:
                     total_bytes = int(c.get('totalGB', 0) or 0)
+                    # Try compute used traffic if present in stats
+                    used_bytes = 0
+                    try:
+                        down = int(c.get('downlink', 0) or 0)
+                    except Exception:
+                        down = 0
+                    try:
+                        up = int(c.get('uplink', 0) or 0)
+                    except Exception:
+                        up = 0
+                    try:
+                        used_bytes = int(c.get('total', 0) or 0)
+                    except Exception:
+                        used_bytes = down + up
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
@@ -514,7 +545,7 @@ class XuiAPI(BasePanelAPI):
                     sub_link = f"{origin}/sub/{subid}?name={subid}" if subid else ''
                     return {
                         'data_limit': total_bytes,
-                        'used_traffic': 0,
+                        'used_traffic': used_bytes,
                         'expire': expire,
                         'subscription_url': sub_link,
                     }, "Success"
@@ -1475,6 +1506,19 @@ class ThreeXuiAPI(BasePanelAPI):
             for c in clients:
                 if c.get('email') == username:
                     total_bytes = int(c.get('totalGB', 0) or 0)
+                    used_bytes = 0
+                    try:
+                        down = int(c.get('downlink', 0) or 0)
+                    except Exception:
+                        down = 0
+                    try:
+                        up = int(c.get('uplink', 0) or 0)
+                    except Exception:
+                        up = 0
+                    try:
+                        used_bytes = int(c.get('total', 0) or 0)
+                    except Exception:
+                        used_bytes = down + up
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
@@ -1490,7 +1534,7 @@ class ThreeXuiAPI(BasePanelAPI):
                     sub_link = f"{origin}/sub/{subid}" if subid else ''
                     return {
                         'data_limit': total_bytes,
-                        'used_traffic': 0,
+                        'used_traffic': used_bytes,
                         'expire': expire,
                         'subscription_url': sub_link,
                     }, "Success"

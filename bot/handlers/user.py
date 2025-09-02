@@ -305,12 +305,26 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         )
         return
 
-    data_limit_gb = "نامحدود" if user_info.get('data_limit', 0) == 0 else f"{bytes_to_gb(user_info.get('data_limit', 0))} گیگابایت"
-    data_used_gb = bytes_to_gb(user_info.get('used_traffic', 0))
-    expire_date = "نامحدود" if not user_info.get('expire') else datetime.fromtimestamp(user_info['expire']).strftime('%Y-%m-%d')
+    # Compute traffic usage and expiry display
+    total_bytes = int(user_info.get('data_limit', 0) or 0)
+    used_bytes = int(user_info.get('used_traffic', 0) or 0)
+    # If total is zero (unlimited), still show used in GB
+    data_limit_gb = "نامحدود" if total_bytes == 0 else f"{bytes_to_gb(total_bytes)} گیگابایت"
+    data_used_gb = bytes_to_gb(used_bytes)
+    # Days remaining
+    exp_ts = int(user_info.get('expire', 0) or 0)
+    if exp_ts and exp_ts > 0:
+        try:
+            now_ts = int(datetime.now().timestamp())
+            days_left = max(0, int((exp_ts - now_ts) / 86400))
+            expire_display = f"{days_left} روز مانده"
+        except Exception:
+            expire_display = "نامحدود"
+    else:
+        expire_display = "نامحدود"
     sub_link = (
         f"{panel_api.base_url}{user_info['subscription_url']}"
-        if user_info.get('subscription_url') and not user_info['subscription_url'].startswith('http')
+        if user_info.get('subscription_url') and isinstance(user_info.get('subscription_url'), str) and not user_info['subscription_url'].startswith('http')
         else user_info.get('subscription_url', 'لینک یافت نشد')
     )
 
@@ -323,10 +337,8 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
     link_label = "\U0001F517 لینک اشتراک:"
     link_value = f"<code>{sub_link}</code>"
     if panel_type in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza','txui','tx-ui','tx ui'):
-        # Do not show sub link for 3x-UI, show configs or a placeholder
         link_label = "\U0001F517 کانفیگ‌ها:"
         link_value = "کانفیگی یافت نشد. دکمه ‘دریافت لینک مجدد’ را بزنید تا ساخته شود."
-        # Try build from inbound first (if supported), else decode subscription
         try:
             confs = []
             if hasattr(panel_api, 'list_inbounds') and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
@@ -339,16 +351,12 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
                         ib_id = inbounds[0].get('id')
                 if ib_id is not None:
                     confs = panel_api.get_configs_for_user_on_inbound(ib_id, marzban_username) or []
-            if not confs:
-                # decode subscription content if available
-                maybe_sub = sub_link
-                if maybe_sub and maybe_sub.startswith('http'):
-                    confs = _fetch_subscription_configs(maybe_sub)
+            if not confs and sub_link and isinstance(sub_link, str) and sub_link.startswith('http'):
+                confs = _fetch_subscription_configs(sub_link)
             if confs:
-                link_value = "\n".join(f"<code>{c}</code>" for c in confs)
+                link_value = "\n".join(f"<code>{c}</code>" for c in confs[:1])
         except Exception:
             pass
-    # persist last link for fast reuse
     try:
         execute_db("UPDATE orders SET last_link = ? WHERE id = ?", (sub_link or '', order_id))
     except Exception:
@@ -358,7 +366,7 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
         f"<b>\U0001F4E6 مشخصات سرویس (<code>{marzban_username}</code>)</b>\n\n"
         f"<b>\U0001F4CA حجم کل:</b> {data_limit_gb}\n"
         f"<b>\U0001F4C8 حجم مصرفی:</b> {data_used_gb} گیگابایت\n"
-        f"<b>\U0001F4C5 تاریخ انقضا:</b> {expire_date}\n\n"
+        f"<b>\U0001F4C5 تاریخ انقضا:</b> {expire_display}\n\n"
         f"<b>{link_label}</b>\n{link_value}"
     )
 
