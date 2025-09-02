@@ -1429,6 +1429,46 @@ class ThreeXuiAPI(BasePanelAPI):
             logger.error(f"3x-UI list_inbounds error: {e}")
             return None, str(e)
 
+    def _fetch_client_traffics(self, inbound_id: int):
+        endpoints = [
+            f"{self.base_url}/xui/api/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/panel/api/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/xui/API/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/panel/API/inbounds/getClientTraffics/{inbound_id}",
+        ]
+        for url in endpoints:
+            try:
+                resp = self.session.get(url, headers=self._json_headers, timeout=12)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                items = data.get('obj') if isinstance(data, dict) else data
+                if isinstance(items, list):
+                    return items
+            except Exception:
+                continue
+        return []
+
+    def _fetch_client_traffic_by_email(self, email: str):
+        endpoints = [
+            f"{self.base_url}/xui/api/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/panel/api/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/xui/API/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/panel/API/inbounds/getClientTraffics/{email}",
+        ]
+        for url in endpoints:
+            try:
+                resp = self.session.get(url, headers=self._json_headers, timeout=12)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                obj = data.get('obj') if isinstance(data, dict) else data
+                if isinstance(obj, dict):
+                    return obj
+            except Exception:
+                continue
+        return None
+
     def create_user_on_inbound(self, inbound_id: int, user_id: int, plan):
         if not self.get_token():
             return None, None, "خطا در ورود به پنل 3x-UI"
