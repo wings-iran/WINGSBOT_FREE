@@ -29,6 +29,20 @@ async def check_expirations(context: ContextTypes.DEFAULT_TYPE):
             orders_map[order['marzban_username']] = []
         orders_map[order['marzban_username']].append(order)
 
+    # Deactivate expired resellers daily
+    try:
+        expired = query_db("SELECT user_id, expires_at FROM resellers WHERE status='active' AND expires_at IS NOT NULL AND expires_at < datetime('now')") or []
+        for r in expired:
+            execute_db("UPDATE resellers SET status='inactive' WHERE user_id = ?", (r['user_id'],))
+            try:
+                await context.bot.send_message(r['user_id'], "نمایندگی شما به دلیل اتمام مدت، غیرفعال شد.")
+            except Exception:
+                pass
+        if expired:
+            logger.info(f"Deactivated {len(expired)} expired resellers")
+    except Exception as e:
+        logger.error(f"Reseller expiry check failed: {e}")
+
     all_panels = query_db("SELECT id FROM panels")
     for panel_data in all_panels:
         try:
