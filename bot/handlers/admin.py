@@ -551,10 +551,20 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
     if display_confs:
         preview = display_confs[:1]  # send only the first config
         configs_text = "\n".join(preview)
+        # Build subscription link if available
+        sub_line = ""
+        try:
+            sub_abs = sub_link or ''
+            if sub_abs and not sub_abs.startswith('http'):
+                sub_abs = f"{api.base_url}{sub_abs}"
+            if sub_abs:
+                sub_line = f"\n<b>لینک ساب:</b>\n<code>{sub_abs}</code>\n"
+        except Exception:
+            sub_line = ""
         user_message = (
             f"✅ سفارش شما تایید شد!\n\n"
             f"<b>پلن:</b> {plan['name']}\n"
-            f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
+            f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>{sub_line}\n" + footer
         )
     else:
         if ptype_lower in ('txui','tx-ui','tx ui'):

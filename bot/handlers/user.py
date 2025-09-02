@@ -354,7 +354,15 @@ async def show_specific_service_details(update: Update, context: ContextTypes.DE
             if not confs and sub_link and isinstance(sub_link, str) and sub_link.startswith('http'):
                 confs = _fetch_subscription_configs(sub_link)
             if confs:
-                link_value = "\n".join(f"<code>{c}</code>" for c in confs[:1])
+                cfgs = "\n".join(f"<code>{c}</code>" for c in confs[:1])
+                # Try to also show subscription link under configs
+                sub_abs = sub_link or ''
+                if sub_abs and not sub_abs.startswith('http'):
+                    sub_abs = f"{panel_api.base_url}{sub_abs}"
+                if sub_abs:
+                    link_value = f"{cfgs}\n\n<b>لینک ساب:</b>\n<code>{sub_abs}</code>"
+                else:
+                    link_value = cfgs
         except Exception:
             pass
     try:
