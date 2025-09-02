@@ -566,11 +566,13 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
                 sent = False
         if not sent:
             await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+        # Exit selection mode: clear pending and collapse keyboard
+        context.user_data.pop('pending_xui', None)
         ok_text = base_text + f"\n\n\u2705 **ارسال با موفقیت انجام شد.**"
         if is_media:
-            await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=None)
+            await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='admin_main')]]))
         else:
-            await _safe_edit_text(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=None)
+            await _safe_edit_text(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='admin_main')]]))
     except TelegramError as e:
         err_text = base_text + f"\n\n\u26A0\uFE0F **خطا در ارسال به کاربر:** {e}"
         if is_media:
