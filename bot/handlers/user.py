@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from ..db import query_db, execute_db
 from ..panel import VpnPanelAPI
 from ..utils import bytes_to_gb
-from ..states import WALLET_AWAIT_AMOUNT_GATEWAY, WALLET_AWAIT_AMOUNT_CARD, WALLET_AWAIT_CARD_SCREENSHOT, WALLET_AWAIT_AMOUNT_CRYPTO, WALLET_AWAIT_CRYPTO_SCREENSHOT
+from ..states import WALLET_AWAIT_AMOUNT_GATEWAY, WALLET_AWAIT_AMOUNT_CARD, WALLET_AWAIT_CARD_SCREENSHOT, WALLET_AWAIT_AMOUNT_CRYPTO, WALLET_AWAIT_CRYPTO_SCREENSHOT, RESELLER_AWAIT_UPLOAD
 from ..states import SUPPORT_AWAIT_TICKET
 from ..config import ADMIN_ID
 from ..helpers.tg import ltr_code, notify_admins
@@ -1052,6 +1052,233 @@ async def referral_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]))
 
+
+async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    uid = query.from_user.id
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    if settings.get('reseller_enabled', '1') != '1':
+        await query.message.edit_text("قابلیت نمایندگی موقتا غیرفعال است.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]))
+        return ConversationHandler.END
+    # If already active reseller and not expired
+    rs = query_db("SELECT status, expires_at, used_purchases, max_purchases, discount_percent FROM resellers WHERE user_id = ?", (uid,), one=True)
+    if rs:
+        text = (
+            f"\U0001F4B5 وضعیت نمایندگی شما\n\n"
+            f"درصد تخفیف: {int(rs.get('discount_percent') or settings.get('reseller_discount_percent') or 50)}%\n"
+            f"سقف خرید: {int(rs.get('used_purchases') or 0)}/{int(rs.get('max_purchases') or settings.get('reseller_max_purchases') or 10)}\n"
+            f"انقضا: {rs.get('expires_at')}\n"
+        )
+        kb = [[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
+        return ConversationHandler.END
+    # Show purchase offer
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    percent = int((settings.get('reseller_discount_percent') or '50') or 50)
+    days = int((settings.get('reseller_duration_days') or '30') or 30)
+    cap = int((settings.get('reseller_max_purchases') or '10') or 10)
+    text = (
+        "دریافت نمایندگی\n\n"
+        f"با دریافت نمایندگی می‌توانید اشتراک‌ها را با {percent}% تخفیف تهیه کنید.\n"
+        f"هزینه دریافت نمایندگی: {fee:,} تومان\n"
+        f"سقف خرید اشتراک: {cap} عدد\n"
+        f"مدت زمان استفاده: {days} روز\n\n"
+        "برای ادامه، روی دکمه زیر بزنید:"
+    )
+    kb = [[InlineKeyboardButton("پرداخت و دریافت", callback_data='reseller_pay_start')], [InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
+    return ConversationHandler.END
+
+
+async def reseller_pay_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    text = (
+        f"پرداخت هزینه نمایندگی ({fee:,} تومان)\n\nروش پرداخت خود را انتخاب کنید:"
+    )
+    kb = [
+        [InlineKeyboardButton("\U0001F4B3 کارت به کارت", callback_data='reseller_pay_card')],
+        [InlineKeyboardButton("\U0001F4B0 رمزارز", callback_data='reseller_pay_crypto')],
+        [InlineKeyboardButton("\U0001F6E0\uFE0F درگاه پرداخت", callback_data='reseller_pay_gateway')],
+        [InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_menu')],
+    ]
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
+    return ConversationHandler.END
+
+
+async def reseller_pay_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    cards = query_db("SELECT card_number, holder_name FROM cards") or []
+    if not cards:
+        await query.message.edit_text("هیچ کارت بانکی تنظیم نشده است.")
+        return ConversationHandler.END
+    lines = [f"\U0001F4B0 مبلغ: {fee:,} تومان", "\nبه یکی از کارت‌های زیر واریز کنید و سپس روی دکمه زیر بزنید و رسید را ارسال کنید:"]
+    for c in cards:
+        lines.append(f"- {c['holder_name']}\n{ltr_code(c['card_number'])}")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("ارسال اسکرین‌شات", callback_data='reseller_upload_start_card')],[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]])
+    await query.message.edit_text("\n\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb)
+    context.user_data['reseller_payment'] = {'method': 'card', 'amount': fee}
+    return RESELLER_AWAIT_UPLOAD
+
+
+async def reseller_pay_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    wallets = query_db("SELECT asset, chain, address, memo FROM wallets ORDER BY id DESC") or []
+    if not wallets:
+        await query.message.edit_text("هیچ ولتی ثبت نشده است. لطفا بعدا تلاش کنید.")
+        return ConversationHandler.END
+    lines = [f"\U0001F4B0 مبلغ: {fee:,} تومان", "لطفا مبلغ معادل را به یکی از ولت‌های زیر واریز کرده و سپس روی دکمه زیر بزنید و رسید را ارسال کنید:"]
+    for w in wallets:
+        memo = f"\nMEMO: {w['memo']}" if w.get('memo') else ''
+        lines.append(f"- {w['asset']} ({w['chain']}):\n{w['address']}{memo}")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("ارسال اسکرین‌شات", callback_data='reseller_upload_start_crypto')],[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]])
+    await query.message.edit_text("\n\n".join(lines), reply_markup=kb)
+    context.user_data['reseller_payment'] = {'method': 'crypto', 'amount': fee}
+    return RESELLER_AWAIT_UPLOAD
+
+
+async def reseller_pay_gateway(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    gateway_type = (settings.get('gateway_type') or 'zarinpal').lower()
+    callback_url = (settings.get('gateway_callback_url') or '').strip()
+    amount_rial = int(fee) * 10
+    if gateway_type == 'zarinpal':
+        from .purchase import _zarinpal_request
+        mid = (settings.get('zarinpal_merchant_id') or '').strip()
+        if not mid:
+            await query.message.edit_text("MerchantID تنظیم نشده است.")
+            return ConversationHandler.END
+        authority, start_url = _zarinpal_request(mid, amount_rial, "پرداخت دریافت نمایندگی", callback_url or 'https://example.com/callback')
+        if not (authority and start_url):
+            await query.message.edit_text("خطا در ایجاد لینک زرین‌پال.")
+            return ConversationHandler.END
+        context.user_data['reseller_gateway'] = {'type': 'zarinpal', 'authority': authority, 'amount_rial': amount_rial}
+        kb = [
+            [InlineKeyboardButton("\U0001F6D2 رفتن به صفحه پرداخت", url=start_url)],
+            [InlineKeyboardButton("\U0001F50D بررسی پرداخت", callback_data='reseller_verify_gateway')],
+            [InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')],
+        ]
+        await query.message.edit_text(f"\U0001F6E0\uFE0F پرداخت آنلاین\n\nمبلغ: {fee:,} تومان", reply_markup=InlineKeyboardMarkup(kb))
+        return ConversationHandler.END
+    else:
+        from .purchase import _aghapay_create
+        pin = (settings.get('aghapay_pin') or '').strip()
+        if not pin or not callback_url:
+            await query.message.edit_text("PIN یا Callback آقای پرداخت تنظیم نشده است.")
+            return ConversationHandler.END
+        order_id_str = f"RES-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        pay_url = _aghapay_create(pin, int(fee), callback_url, order_id_str, "پرداخت دریافت نمایندگی")
+        if not pay_url:
+            await query.message.edit_text("خطا در ایجاد لینک آقای پرداخت.")
+            return ConversationHandler.END
+        context.user_data['reseller_gateway'] = {'type': 'aghapay', 'amount_rial': amount_rial, 'transid': pay_url.split('/')[-1]}
+        kb = [
+            [InlineKeyboardButton("\U0001F6D2 رفتن به صفحه پرداخت", url=pay_url)],
+            [InlineKeyboardButton("\U0001F50D بررسی پرداخت", callback_data='reseller_verify_gateway')],
+            [InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')],
+        ]
+        await query.message.edit_text(f"\U0001F6E0\uFE0F پرداخت آنلاین\n\nمبلغ: {fee:,} تومان", reply_markup=InlineKeyboardMarkup(kb))
+        return ConversationHandler.END
+
+
+async def reseller_verify_gateway(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    gw = context.user_data.get('reseller_gateway') or {}
+    if not gw:
+        await query.message.edit_text("اطلاعات پرداخت یافت نشد.")
+        return ConversationHandler.END
+    ok = False
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    if gw.get('type') == 'zarinpal':
+        from .purchase import _zarinpal_verify
+        ok, ref_id = _zarinpal_verify(settings.get('zarinpal_merchant_id') or '', gw.get('amount_rial', 0), gw.get('authority',''))
+        reference = ref_id
+    else:
+        from .purchase import _aghapay_verify
+        fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+        ok = _aghapay_verify(settings.get('aghapay_pin') or '', fee, gw.get('transid',''))
+        reference = gw.get('transid','')
+    if not ok:
+        await query.message.edit_text("پرداخت تایید نشد. دوباره امتحان کنید.")
+        return ConversationHandler.END
+    # Log request and notify admins
+    user = query.from_user
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    rr_id = execute_db(
+        "INSERT INTO reseller_requests (user_id, amount, method, status, created_at, reference) VALUES (?, ?, ?, 'pending', ?, ?)",
+        (user.id, fee, gw.get('type','gateway'), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), reference)
+    )
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("\u2705 تایید نمایندگی", callback_data=f"reseller_approve_{rr_id}"), InlineKeyboardButton("\u274C رد", callback_data=f"reseller_reject_{rr_id}")]])
+    await notify_admins(context.bot, text=(f"\U0001F4B5 درخواست دریافت نمایندگی\n\nکاربر: `{user.id}`\nمبلغ: {fee:,} تومان\nروش: {gw.get('type','gateway')}\nRef: {reference}"), parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
+    await query.message.edit_text("\u2705 پرداخت شما ثبت شد و برای تایید به ادمین ارسال شد. لطفا منتظر بمانید.")
+    context.user_data.pop('reseller_gateway', None)
+    return ConversationHandler.END
+
+
+async def reseller_upload_start_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data['awaiting'] = 'reseller_upload'
+    context.user_data['reseller_payment'] = context.user_data.get('reseller_payment') or {'method': 'card'}
+    await query.message.edit_text("رسید/اسکرین‌شات پرداخت نمایندگی را ارسال کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]]))
+    return RESELLER_AWAIT_UPLOAD
+
+
+async def reseller_upload_start_crypto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    context.user_data['awaiting'] = 'reseller_upload'
+    context.user_data['reseller_payment'] = context.user_data.get('reseller_payment') or {'method': 'crypto'}
+    await query.message.edit_text("رسید/اسکرین‌شات پرداخت نمایندگی را ارسال کنید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='reseller_pay_start')]]))
+    return RESELLER_AWAIT_UPLOAD
+
+
+async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.user_data.get('awaiting') != 'reseller_upload':
+        return ConversationHandler.END
+    user_id = update.effective_user.id
+    pay = context.user_data.get('reseller_payment') or {}
+    method = pay.get('method') or 'card'
+    amount = int(pay.get('amount') or 0)
+    if amount <= 0:
+        settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+        amount = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    file_id = None
+    caption_extra = ''
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+    elif update.message.document:
+        file_id = update.message.document.file_id
+    elif update.message.text:
+        caption_extra = update.message.text
+    rr_id = execute_db(
+        "INSERT INTO reseller_requests (user_id, amount, method, status, created_at, screenshot_file_id, meta) VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+        (user_id, int(amount), method, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), file_id, caption_extra[:500])
+    )
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("\u2705 تایید نمایندگی", callback_data=f"reseller_approve_{rr_id}"), InlineKeyboardButton("\u274C رد", callback_data=f"reseller_reject_{rr_id}")]])
+    caption = (f"\U0001F4B5 درخواست دریافت نمایندگی ({'Card' if method=='card' else 'Crypto'})\n\nکاربر: `{user_id}`\nمبلغ: {int(amount):,} تومان")
+    if file_id:
+        await notify_admins(context.bot, photo=file_id, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
+    else:
+        await notify_admins(context.bot, text=f"{caption}\n\n{caption_extra}", parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
+    await update.message.reply_text("درخواست نمایندگی ثبت شد و پس از تایید ادمین فعال می‌شود.")
+    context.user_data.pop('awaiting', None)
+    context.user_data.pop('reseller_payment', None)
+    return ConversationHandler.END
 
 async def wallet_upload_start_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query

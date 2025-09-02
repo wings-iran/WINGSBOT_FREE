@@ -17,6 +17,18 @@ async def start_purchase_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
+    # Check reseller status for discount view
+    uid = query.from_user.id
+    reseller = query_db("SELECT discount_percent, expires_at, max_purchases, used_purchases, status FROM resellers WHERE user_id = ?", (uid,), one=True) or {}
+    # If expired, treat as no reseller
+    try:
+        if reseller:
+            from datetime import datetime as _dt
+            if reseller.get('expires_at') and _dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") < _dt.now():
+                reseller = {}
+    except Exception:
+        pass
+    r_percent = int((reseller.get('discount_percent') or 0) or 0)
     plans = query_db("SELECT id, name, price FROM plans ORDER BY price")
     if not plans:
         await _safe_edit(
@@ -26,7 +38,14 @@ async def start_purchase_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ConversationHandler.END
 
-    keyboard = [[InlineKeyboardButton(f"{plan['name']} - {plan['price']:,} تومان", callback_data=f"select_plan_{plan['id']}")] for plan in plans]
+    keyboard = []
+    for plan in plans:
+        price = int(plan['price'])
+        label_price = f"{price:,} تومان"
+        if r_percent > 0:
+            new_price = int(price * (100 - r_percent) / 100)
+            label_price = f"{price:,} ➜ {new_price:,} تومان"
+        keyboard.append([InlineKeyboardButton(f"{plan['name']} - {label_price}", callback_data=f"select_plan_{plan['id']}")])
     keyboard.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')])
 
     message_data = query_db("SELECT text FROM messages WHERE message_name = 'buy_config_main'", one=True)
@@ -52,7 +71,20 @@ async def show_plan_confirmation(update: Update, context: ContextTypes.DEFAULT_T
 
     context.user_data['selected_plan_id'] = plan_id
     context.user_data['original_price'] = plan['price']
-    context.user_data['final_price'] = plan['price']
+    # Apply reseller discount if any and within cap
+    uid = query.from_user.id
+    reseller = query_db("SELECT discount_percent, expires_at, max_purchases, used_purchases, status FROM resellers WHERE user_id = ?", (uid,), one=True) or {}
+    r_percent = 0
+    try:
+        if reseller:
+            from datetime import datetime as _dt
+            active = (reseller.get('status') == 'active') and (not reseller.get('expires_at') or _dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") >= _dt.now())
+            within_cap = int(reseller.get('used_purchases') or 0) < int(reseller.get('max_purchases') or 0)
+            if active and within_cap:
+                r_percent = int((reseller.get('discount_percent') or 0) or 0)
+    except Exception:
+        r_percent = 0
+    context.user_data['final_price'] = int(plan['price'] * (100 - r_percent) / 100) if r_percent > 0 else plan['price']
     context.user_data['discount_code'] = None
 
     traffic_display = "نامحدود" if float(plan['traffic_gb']) == 0 else f"{plan['traffic_gb']} گیگابایت"
@@ -363,6 +395,14 @@ async def pay_method_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "INSERT INTO orders (user_id, plan_id, timestamp, final_price, discount_code) VALUES (?, ?, ?, ?, ?)",
         (user.id, plan_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), int(final_price), discount_code),
     )
+    # Increment reseller usage if applicable
+    try:
+        r = query_db("SELECT max_purchases, used_purchases FROM resellers WHERE user_id = ?", (user.id,), one=True)
+        if r and int(r.get('used_purchases') or 0) < int(r.get('max_purchases') or 0):
+            execute_db("UPDATE resellers SET used_purchases = used_purchases + 1 WHERE user_id = ?", (user.id,))
+            execute_db("UPDATE orders SET reseller_applied = 1 WHERE id = ?", (order_id,))
+    except Exception:
+        pass
     plan = query_db("SELECT * FROM plans WHERE id = ?", (plan_id,), one=True)
     user_info = f"\U0001F464 **کاربر:** {user.mention_html()}\n\U0001F194 **آیدی:** `{user.id}`"
     plan_info = f"\U0001F4CB **پلن:** {plan['name']}"
@@ -790,6 +830,14 @@ async def gateway_verify_purchase(update: Update, context: ContextTypes.DEFAULT_
         "INSERT INTO orders (user_id, plan_id, timestamp, final_price, discount_code) VALUES (?, ?, ?, ?, ?)",
         (user.id, plan_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), final_price, discount_code),
     )
+    # Increment reseller usage if applicable
+    try:
+        r = query_db("SELECT max_purchases, used_purchases FROM resellers WHERE user_id = ?", (user.id,), one=True)
+        if r and int(r.get('used_purchases') or 0) < int(r.get('max_purchases') or 0):
+            execute_db("UPDATE resellers SET used_purchases = used_purchases + 1 WHERE user_id = ?", (user.id,))
+            execute_db("UPDATE orders SET reseller_applied = 1 WHERE id = ?", (order_id,))
+    except Exception:
+        pass
     plan = query_db("SELECT * FROM plans WHERE id = ?", (plan_id,), one=True)
     user_info = f"\U0001F464 **کاربر:** {user.mention_html()}\n\U0001F194 **آیدی:** `{user.id}`"
     plan_info = f"\U0001F4CB **پلن:** {plan['name']}"

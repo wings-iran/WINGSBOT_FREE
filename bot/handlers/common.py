@@ -137,6 +137,7 @@ async def send_dynamic_message(update: Update, context: ContextTypes.DEFAULT_TYP
             ('support_menu', "\U0001F4AC پشتیبانی"),
             ('tutorials_menu', "\U0001F4D6 آموزش‌ها"),
             ('referral_menu', "\U0001F517 معرفی به دوستان"),
+            ('reseller_menu', "\U0001F4B5 دریافت نمایندگی"),
         ]
         row = []
         for tgt, label in remaining_targets:
@@ -239,6 +240,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ('support_menu', "\U0001F4AC پشتیبانی"),
         ('tutorials_menu', "\U0001F4D6 آموزش‌ها"),
         ('referral_menu', "\U0001F517 معرفی به دوستان"),
+        ('reseller_menu', "\U0001F4B5 دریافت نمایندگی"),
     ]
     if second_row:
         # Try to add one more to complete the row

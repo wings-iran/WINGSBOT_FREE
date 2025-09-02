@@ -100,6 +100,12 @@ def initialize_default_content(cursor: sqlite3.Cursor, conn: sqlite3.Connection)
         ('referral_commission_percent', '10'),
         # Config footer text (shown under config link)
         ('config_footer_text', 'آموزش اتصال :\nhttps://t.me/madeingod_tm'),
+        # Reseller defaults
+        ('reseller_enabled', '1'),
+        ('reseller_fee_toman', '200000'),
+        ('reseller_discount_percent', '50'),
+        ('reseller_duration_days', '30'),
+        ('reseller_max_purchases', '10'),
     ]
     for k, v in defaults:
         _execute_db("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
@@ -229,7 +235,7 @@ def db_setup():
                     id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, plan_id INTEGER NOT NULL,
                     status TEXT DEFAULT 'pending', marzban_username TEXT, screenshot_file_id TEXT, timestamp TEXT,
                     panel_id INTEGER, discount_code TEXT, final_price INTEGER, last_reminder_date TEXT, panel_type TEXT,
-                    last_link TEXT, xui_inbound_id INTEGER, xui_client_id TEXT
+                    last_link TEXT, xui_inbound_id INTEGER, xui_client_id TEXT, reseller_applied INTEGER DEFAULT 0
                 )
                 """
             )
@@ -269,6 +275,43 @@ def db_setup():
             )
             """
         )
+        # Reseller tables
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS resellers (
+                user_id INTEGER PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'active',
+                activated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                discount_percent INTEGER NOT NULL,
+                max_purchases INTEGER NOT NULL,
+                used_purchases INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reseller_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                method TEXT NOT NULL, -- card/crypto/gateway
+                status TEXT NOT NULL DEFAULT 'pending', -- pending/approved/rejected
+                created_at TEXT NOT NULL,
+                screenshot_file_id TEXT,
+                reference TEXT,
+                meta TEXT
+            )
+            """
+        )
+        # Migration: add reseller_applied if missing
+        cursor.execute("PRAGMA table_info(orders)")
+        ocols = [col[1] for col in cursor.fetchall()]
+        if 'reseller_applied' not in ocols:
+            try:
+                cursor.execute("ALTER TABLE orders ADD COLUMN reseller_applied INTEGER DEFAULT 0")
+            except sqlite3.Error:
+                pass
         # Tickets table
         cursor.execute(
             """

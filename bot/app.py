@@ -54,8 +54,9 @@ from .handlers.admin import (
     admin_set_trial_inbound_start, admin_set_trial_inbound_choose,
     admin_toggle_pay_card, admin_toggle_pay_crypto, admin_toggle_pay_gateway, admin_toggle_gateway_type,
     admin_xui_choose_inbound,
+    admin_reseller_menu, admin_toggle_reseller, admin_reseller_requests, admin_reseller_set_value_start, admin_reseller_set_value_save, admin_reseller_approve, admin_reseller_reject,
 )
-from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, wallet_upload_router, refresh_service_link, revoke_key
+from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, wallet_upload_router, refresh_service_link, revoke_key, reseller_menu, reseller_pay_start, reseller_pay_card, reseller_pay_crypto, reseller_pay_gateway, reseller_verify_gateway, reseller_upload_start_card, reseller_upload_start_crypto, reseller_upload_router
 from .handlers.purchase import (
     start_purchase_flow,
     show_plan_confirmation,
@@ -279,6 +280,11 @@ def build_application() -> Application:
                 CallbackQueryHandler(premium_admin_set_signup_bonus_amount_start, pattern='^set_signup_bonus_amount$'),
                 CallbackQueryHandler(admin_set_gateway_api_start, pattern='^set_gateway_api_start$'),
                 CallbackQueryHandler(admin_command, pattern='^admin_main$'),
+                # Reseller settings
+                CallbackQueryHandler(admin_reseller_menu, pattern='^admin_reseller_menu$'),
+                CallbackQueryHandler(admin_toggle_reseller, pattern=r'^toggle_reseller_(0|1)$'),
+                CallbackQueryHandler(admin_reseller_requests, pattern='^admin_reseller_requests$'),
+                CallbackQueryHandler(admin_reseller_set_value_start, pattern=r'^(set_reseller_fee|set_reseller_percent|set_reseller_days|set_reseller_cap)$'),
             ],
             ADMIN_WALLET_MENU: [
                 CallbackQueryHandler(admin_wallet_tx_menu, pattern='^admin_wallet_tx_menu$'),
@@ -312,64 +318,6 @@ def build_application() -> Application:
             SETTINGS_AWAIT_USD_RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_usd_rate_save)],
             SETTINGS_AWAIT_SIGNUP_BONUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, premium_admin_set_signup_bonus_amount_save)],
             SETTINGS_AWAIT_GATEWAY_API: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_gateway_api_save)],
-            ADMIN_PANELS_MENU: [
-                CallbackQueryHandler(admin_panel_add_start, pattern='^panel_add_start$'),
-                CallbackQueryHandler(admin_panel_delete, pattern=r'^panel_delete_'),
-                CallbackQueryHandler(admin_panel_inbounds_menu, pattern=r'^panel_inbounds_'),
-                CallbackQueryHandler(admin_command, pattern='^admin_main$'),
-            ],
-            ADMIN_PANEL_AWAIT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_name)],
-            ADMIN_PANEL_AWAIT_TYPE: [CallbackQueryHandler(admin_panel_receive_type, pattern=r'^panel_type_(marzban|xui|3xui|txui|marzneshin)$')],
-            ADMIN_PANEL_AWAIT_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_url)],
-            ADMIN_PANEL_AWAIT_SUB_BASE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_sub_base)],
-            ADMIN_PANEL_AWAIT_TOKEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_token)],
-            ADMIN_PANEL_AWAIT_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_user)],
-            ADMIN_PANEL_AWAIT_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_save)],
-            ADMIN_PANEL_INBOUNDS_MENU: [
-                CallbackQueryHandler(admin_panel_inbound_delete, pattern=r'^inbound_delete_'),
-                CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
-            ],
-            # Disabled add-inbound flow globally
-            ADMIN_MESSAGES_MENU: [
-                CallbackQueryHandler(admin_messages_select, pattern='^msg_select_'),
-                CallbackQueryHandler(msg_add_start, pattern='^msg_add_start$'),
-                CallbackQueryHandler(admin_messages_menu, pattern='^admin_messages_menu_page_\d+$'),
-                CallbackQueryHandler(admin_command, pattern='^admin_main$'),
-            ],
-            ADMIN_MESSAGES_ADD_AWAIT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_add_receive_name)],
-            ADMIN_MESSAGES_ADD_AWAIT_CONTENT: [MessageHandler(filters.ALL & ~filters.COMMAND, msg_add_receive_content)],
-            ADMIN_MESSAGES_EDIT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_messages_edit_text_save)],
-            ADMIN_MESSAGES_SELECT: [
-                CallbackQueryHandler(admin_messages_edit_text_start, pattern='^msg_action_edit_text$'),
-                CallbackQueryHandler(admin_buttons_menu, pattern='^msg_action_edit_buttons$'),
-                CallbackQueryHandler(admin_button_edit_start, pattern=r'^btn_edit_\d+$'),
-                CallbackQueryHandler(admin_button_edit_ask_value, pattern=r'^btn_edit_field_'),
-                CallbackQueryHandler(admin_button_edit_set_is_url, pattern=r'^btn_set_isurl_\d+_(0|1)$'),
-                CallbackQueryHandler(admin_button_add_start, pattern='^btn_add_new$'),
-                CallbackQueryHandler(admin_button_delete, pattern=r'^btn_delete_\d+$'),
-                CallbackQueryHandler(admin_messages_delete, pattern='^msg_delete_current$'),
-                CallbackQueryHandler(admin_messages_menu, pattern='^admin_messages_menu_page_\d+$'),
-                CallbackQueryHandler(admin_command, pattern='^admin_main$'),
-            ],
-            ADMIN_BUTTON_ADD_AWAIT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_button_add_receive_text)],
-            ADMIN_BUTTON_ADD_AWAIT_TARGET: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_button_add_receive_target)],
-            ADMIN_BUTTON_ADD_AWAIT_URL: [CallbackQueryHandler(admin_button_add_receive_is_url, pattern=r'^btn_isurl_(0|1)$')],
-            ADMIN_BUTTON_ADD_AWAIT_ROW: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_button_add_receive_row)],
-            ADMIN_BUTTON_ADD_AWAIT_COL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_button_add_save)],
-            BROADCAST_SELECT_AUDIENCE: [CallbackQueryHandler(premium_admin_broadcast_ask_message, pattern='^broadcast_(all|buyers)$')],
-            BROADCAST_AWAIT_MESSAGE: [MessageHandler(filters.ALL & ~filters.COMMAND, premium_admin_broadcast_execute)],
-            DISCOUNT_MENU: [
-                CallbackQueryHandler(admin_discount_add_start, pattern='^add_discount_code$'),
-                CallbackQueryHandler(admin_discount_delete, pattern=r'^delete_discount_\d+$'),
-                CallbackQueryHandler(premium_admin_broadcast_menu, pattern='^admin_broadcast_menu$'),
-                CallbackQueryHandler(admin_messages_menu, pattern='^admin_messages_menu$'),
-                CallbackQueryHandler(admin_command, pattern='^admin_main$'),
-            ],
-            DISCOUNT_AWAIT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_code)],
-            DISCOUNT_AWAIT_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_percent)],
-            DISCOUNT_AWAIT_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_limit)],
-            DISCOUNT_AWAIT_EXPIRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_save)],
-            BACKUP_CHOOSE_PANEL: [CallbackQueryHandler(premium_admin_generate_backup, pattern=r'^backup_panel_')],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_admin_conversation),
@@ -444,6 +392,16 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(admin_wallets_menu, pattern='^admin_wallets_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_settings_manage, pattern='^admin_settings_manage$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_admins_menu, pattern='^admin_admins_menu$'), group=3)
+    # Reseller user flows
+    application.add_handler(CallbackQueryHandler(reseller_menu, pattern=r'^reseller_menu$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_start, pattern=r'^reseller_pay_start$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_card, pattern=r'^reseller_pay_card$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_crypto, pattern=r'^reseller_pay_crypto$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_gateway, pattern=r'^reseller_pay_gateway$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_verify_gateway, pattern=r'^reseller_verify_gateway$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_upload_start_card, pattern=r'^reseller_upload_start_card$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_upload_start_crypto, pattern=r'^reseller_upload_start_crypto$'), group=3)
+
     # Route critical admin callbacks globally so buttons work from any state
     # application.add_handler(CallbackQueryHandler(admin_global_router, pattern=r'^admin_'), group=0)
     application.add_handler(CommandHandler('addadmin', premium_admin_add_command), group=0)
@@ -505,6 +463,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(support_menu, pattern=r'^support_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(tutorials_menu, pattern=r'^tutorials_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(referral_menu, pattern=r'^referral_menu$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_menu, pattern=r'^reseller_menu$'), group=3)
 
     # User wallet flows and support/tutorials (global callbacks)
     application.add_handler(CallbackQueryHandler(wallet_topup_gateway_start, pattern=r'^wallet_topup_gateway$'), group=3)
@@ -516,11 +475,15 @@ def build_application() -> Application:
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, wallet_upload_router), group=2)
     application.add_handler(CallbackQueryHandler(wallet_verify_gateway, pattern=r'^wallet_verify_gateway$'), group=3)
 
-    application.add_handler(CallbackQueryHandler(ticket_create_start, pattern=r'^ticket_create_start$'), group=3)
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, ticket_receive_message), group=-3)
-
-    application.add_handler(CallbackQueryHandler(tutorials_menu, pattern=r'^tutorials_menu$'), group=3)
-    application.add_handler(CallbackQueryHandler(tutorial_show, pattern=r'^tutorial_show_\d+$'), group=3)
+    # Reseller flows
+    application.add_handler(CallbackQueryHandler(reseller_pay_start, pattern=r'^reseller_pay_start$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_card, pattern=r'^reseller_pay_card$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_crypto, pattern=r'^reseller_pay_crypto$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_pay_gateway, pattern=r'^reseller_pay_gateway$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_verify_gateway, pattern=r'^reseller_verify_gateway$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_upload_start_card, pattern=r'^reseller_upload_start_card$'), group=3)
+    application.add_handler(CallbackQueryHandler(reseller_upload_start_crypto, pattern=r'^reseller_upload_start_crypto$'), group=3)
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, reseller_upload_router), group=2)
 
     # Admin tickets (global)
     application.add_handler(CallbackQueryHandler(admin_tickets_menu, pattern=r'^admin_tickets_menu$'), group=3)

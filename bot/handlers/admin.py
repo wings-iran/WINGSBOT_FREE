@@ -1189,6 +1189,7 @@ async def admin_settings_manage(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton("تنظیم درصد کمیسیون معرفی", callback_data="set_ref_percent_start")],
         [InlineKeyboardButton("\U0001F4B3 مدیریت کارت‌ها", callback_data="admin_cards_menu"), InlineKeyboardButton("\U0001F4B0 مدیریت ولت‌ها", callback_data="admin_wallets_menu")],
         [InlineKeyboardButton("\U0001F4B8 درخواست‌های شارژ کیف پول", callback_data="admin_wallet_tx_menu")],
+        [InlineKeyboardButton("\U0001F4B5 تنظیمات نمایندگی", callback_data="admin_reseller_menu")],
         [InlineKeyboardButton("\U0001F4B1 تنظیم نرخ دلار", callback_data="set_usd_rate_start"), InlineKeyboardButton("\U0001F504 تغییر حالت نرخ: " + ("به دستی" if next_mode=='manual' else "به API"), callback_data=f"toggle_usd_mode_{next_mode}")],
         [InlineKeyboardButton(("غیرفعال کردن کارت" if pay_card else "فعال کردن کارت"), callback_data=f"toggle_pay_card_{0 if pay_card else 1}"), InlineKeyboardButton(("غیرفعال کردن رمزارز" if pay_crypto else "فعال کردن رمزارز"), callback_data=f"toggle_pay_crypto_{0 if pay_crypto else 1}")],
         [InlineKeyboardButton(("غیرفعال کردن درگاه" if pay_gateway else "فعال کردن درگاه"), callback_data=f"toggle_pay_gateway_{0 if pay_gateway else 1}"), InlineKeyboardButton(("زرین‌پال" if gateway_type!='zarinpal' else "آقای پرداخت"), callback_data=f"toggle_gateway_type_{'zarinpal' if gateway_type!='zarinpal' else 'aghapay'}")],
@@ -1208,6 +1209,138 @@ async def admin_toggle_trial_status(update: Update, context: ContextTypes.DEFAUL
     execute_db("UPDATE settings SET value = ? WHERE key = 'free_trial_status'", (new_status,))
     await query.answer(f"وضعیت تست رایگان {'فعال' if new_status == '1' else 'غیرفعال'} شد.", show_alert=True)
     return await admin_settings_manage(update, context)
+
+
+# --- Reseller Settings & Requests ---
+async def admin_reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    enabled = settings.get('reseller_enabled', '1') == '1'
+    fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
+    percent = int((settings.get('reseller_discount_percent') or '50') or 50)
+    days = int((settings.get('reseller_duration_days') or '30') or 30)
+    cap = int((settings.get('reseller_max_purchases') or '10') or 10)
+    text = (
+        "\U0001F4B5 تنظیمات نمایندگی\n\n"
+        f"وضعیت: {'فعال' if enabled else 'غیرفعال'}\n"
+        f"هزینه: {fee:,} تومان\n"
+        f"درصد تخفیف: {percent}%\n"
+        f"مدت: {days} روز\n"
+        f"سقف خرید: {cap} عدد\n"
+    )
+    kb = [
+        [InlineKeyboardButton(("غیرفعال کردن" if enabled else "فعال کردن"), callback_data=f"toggle_reseller_{0 if enabled else 1}")],
+        [InlineKeyboardButton("تنظیم هزینه", callback_data="set_reseller_fee"), InlineKeyboardButton("تنظیم درصد", callback_data="set_reseller_percent")],
+        [InlineKeyboardButton("تنظیم مدت", callback_data="set_reseller_days"), InlineKeyboardButton("تنظیم سقف خرید", callback_data="set_reseller_cap")],
+        [InlineKeyboardButton("درخواست‌های نمایندگی", callback_data="admin_reseller_requests")],
+        [InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_settings_manage")],
+    ]
+    await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(kb))
+    return SETTINGS_MENU
+
+
+async def admin_toggle_reseller(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    val = query.data.split('_')[-1]
+    execute_db("INSERT OR REPLACE INTO settings (key, value) VALUES ('reseller_enabled', ?)", (val,))
+    return await admin_reseller_menu(update, context)
+
+
+async def admin_reseller_requests(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    rows = query_db("SELECT id, user_id, amount, method, status, created_at FROM reseller_requests ORDER BY id DESC LIMIT 50") or []
+    text = "\U0001F4B5 درخواست‌های نمایندگی\n\n"
+    kb = []
+    if not rows:
+        text += "درخواستی یافت نشد."
+    for r in rows:
+        line = f"#{r['id']} | کاربر {r['user_id']} | {r['amount']:,} | {r['method']} | {r['status']} | {r['created_at']}"
+        kb.append([InlineKeyboardButton(line, callback_data=f"noop_{r['id']}")])
+    kb.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_reseller_menu")])
+    await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(kb))
+    return SETTINGS_MENU
+
+
+async def admin_reseller_set_value_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    mapping = {
+        'set_reseller_fee': ('reseller_fee_toman', 'مبلغ جدید (تومان) را وارد کنید:'),
+        'set_reseller_percent': ('reseller_discount_percent', 'درصد تخفیف را وارد کنید:'),
+        'set_reseller_days': ('reseller_duration_days', 'مدت (روز) را وارد کنید:'),
+        'set_reseller_cap': ('reseller_max_purchases', 'سقف تعداد خرید را وارد کنید:'),
+    }
+    key = mapping[query.data][0]
+    prompt = mapping[query.data][1]
+    context.user_data['reseller_edit_key'] = key
+    await query.message.edit_text(prompt)
+    return SETTINGS_AWAIT_USD_RATE
+
+
+async def admin_reseller_set_value_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    key = context.user_data.get('reseller_edit_key')
+    if not key:
+        await update.message.reply_text("جلسه منقضی شده است.")
+        return await admin_reseller_menu(update, context)
+    val = _normalize_digits(update.message.text.strip())
+    execute_db("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
+    context.user_data.pop('reseller_edit_key', None)
+    await update.message.reply_text("ذخیره شد.")
+    # Return to reseller menu
+    fake_query = type('obj', (object,), {
+        'data': 'admin_reseller_menu',
+        'message': update.message,
+        'answer': (lambda *args, **kwargs: asyncio.sleep(0)),
+    })
+    fake_update = type('obj', (object,), {'callback_query': fake_query, 'effective_user': update.effective_user})
+    return await admin_reseller_menu(fake_update, context)
+
+
+async def admin_reseller_approve(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    rr_id = int(query.data.split('_')[-1])
+    rr = query_db("SELECT * FROM reseller_requests WHERE id = ?", (rr_id,), one=True)
+    if not rr or rr.get('status') != 'pending':
+        await query.answer("این درخواست قبلا بررسی شده است.", show_alert=True)
+        return SETTINGS_MENU
+    # Activate reseller for user
+    settings = {s['key']: s['value'] for s in query_db("SELECT key, value FROM settings")} or {}
+    percent = int((settings.get('reseller_discount_percent') or '50') or 50)
+    days = int((settings.get('reseller_duration_days') or '30') or 30)
+    cap = int((settings.get('reseller_max_purchases') or '10') or 10)
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    exp = now + timedelta(days=days)
+    execute_db("INSERT OR REPLACE INTO resellers (user_id, status, activated_at, expires_at, discount_percent, max_purchases, used_purchases) VALUES (?, 'active', ?, ?, ?, ?, COALESCE((SELECT used_purchases FROM resellers WHERE user_id = ?), 0))",
+               (rr['user_id'], now.strftime("%Y-%m-%d %H:%M:%S"), exp.strftime("%Y-%m-%d %H:%M:%S"), percent, cap, rr['user_id']))
+    execute_db("UPDATE reseller_requests SET status='approved' WHERE id=?", (rr_id,))
+    try:
+        await context.bot.send_message(rr['user_id'], "\u2705 نمایندگی شما فعال شد. از این پس پلن‌ها با تخفیف برای شما نمایش داده می‌شوند.")
+    except Exception:
+        pass
+    await query.message.edit_reply_markup(reply_markup=None)
+    return SETTINGS_MENU
+
+
+async def admin_reseller_reject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    rr_id = int(query.data.split('_')[-1])
+    rr = query_db("SELECT * FROM reseller_requests WHERE id = ?", (rr_id,), one=True)
+    if not rr or rr.get('status') != 'pending':
+        await query.answer("این درخواست قبلا بررسی شده است.", show_alert=True)
+        return SETTINGS_MENU
+    execute_db("UPDATE reseller_requests SET status='rejected' WHERE id=?", (rr_id,))
+    try:
+        await context.bot.send_message(rr['user_id'], "\u274C درخواست نمایندگی شما رد شد. برای اطلاعات بیشتر با پشتیبانی در تماس باشید.")
+    except Exception:
+        pass
+    await query.message.edit_reply_markup(reply_markup=None)
+    return SETTINGS_MENU
 
 
 async def admin_toggle_usd_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
