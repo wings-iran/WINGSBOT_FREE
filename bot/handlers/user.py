@@ -1066,9 +1066,10 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # If already active reseller and not expired
     rs = query_db("SELECT status, expires_at, used_purchases, max_purchases, discount_percent FROM resellers WHERE user_id = ?", (uid,), one=True)
     if rs:
-        # Days left display
+        # Days left and active eligibility
         exp_str = rs.get('expires_at') or ''
         expire_display = exp_str
+        days_left = None
         try:
             if exp_str:
                 exp_dt = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
@@ -1080,17 +1081,20 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expire_display = exp_str or 'نامعلوم'
 
         status = (rs.get('status') or 'inactive').lower()
-        active_line = 'فعال' if status == 'active' and (not exp_str or expire_display != '0 روز مانده') else 'غیرفعال'
-        text = (
-            f"\U0001F4B5 وضعیت نمایندگی شما\n\n"
-            f"وضعیت: {active_line}\n"
-            f"درصد تخفیف: {int(rs.get('discount_percent') or settings.get('reseller_discount_percent') or 50)}%\n"
-            f"سقف خرید: {int(rs.get('used_purchases') or 0)}/{int(rs.get('max_purchases') or settings.get('reseller_max_purchases') or 10)}\n"
-            f"انقضا: {expire_display}\n"
-        )
-        kb = [[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
-        return ConversationHandler.END
+        under_cap = int(rs.get('max_purchases') or 0) == 0 or int(rs.get('used_purchases') or 0) < int(rs.get('max_purchases') or 0)
+        is_active = (status == 'active') and under_cap and (days_left is None or days_left > 0)
+        if is_active:
+            text = (
+                f"\U0001F4B5 وضعیت نمایندگی شما\n\n"
+                f"وضعیت: فعال\n"
+                f"درصد تخفیف: {int(rs.get('discount_percent') or settings.get('reseller_discount_percent') or 50)}%\n"
+                f"سقف خرید: {int(rs.get('used_purchases') or 0)}/{int(rs.get('max_purchases') or settings.get('reseller_max_purchases') or 10)}\n"
+                f"انقضا: {expire_display}\n"
+            )
+            kb = [[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            return ConversationHandler.END
+        # else: inactive/expired/cap reached -> fall through to purchase offer
     # Show purchase offer
     fee = int((settings.get('reseller_fee_toman') or '200000') or 200000)
     percent = int((settings.get('reseller_discount_percent') or '50') or 50)
