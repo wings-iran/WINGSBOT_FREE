@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  wingsbot:
+    build: .
+    container_name: wingsbot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    command: ["python", "-m", "bot.run"]
+
