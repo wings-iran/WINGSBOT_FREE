@@ -1,28 +1,88 @@
 from telegram.error import BadRequest, TelegramError
 from ..db import query_db
-from ..config import ADMIN_ID
+from ..config import ADMIN_ID, logger
 
 
 async def safe_edit_text(message, text, reply_markup=None, parse_mode=None):
+    # Log outgoing request details for troubleshooting
     try:
-        return await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        kb_summary = None
+        try:
+            if reply_markup and hasattr(reply_markup, 'inline_keyboard'):
+                rows = reply_markup.inline_keyboard or []
+                kb_summary = f"rows={len(rows)} cols={[len(r) for r in rows]}"
+            elif reply_markup and hasattr(reply_markup, 'to_dict'):
+                d = reply_markup.to_dict()
+                rows = (d.get('inline_keyboard') or []) if isinstance(d, dict) else []
+                kb_summary = f"rows={len(rows)}"
+        except Exception:
+            kb_summary = "unknown"
+        logger.info(
+            f"TG API -> editMessageText chat_id={getattr(message, 'chat_id', None)} message_id={getattr(message, 'message_id', None)} parse_mode={parse_mode} text_len={len(text or '')} {kb_summary or ''}"
+        )
+    except Exception:
+        pass
+    try:
+        resp = await message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        try:
+            logger.info(
+                f"TG API <- editMessageText OK chat_id={getattr(message, 'chat_id', None)} message_id={getattr(message, 'message_id', None)}"
+            )
+        except Exception:
+            pass
+        return resp
     except BadRequest as e:
+        try:
+            logger.error(
+                f"TG API <- editMessageText 400 BadRequest: {str(e)} | text_preview={(text or '')[:200]!r}")
+        except Exception:
+            pass
         if 'Message is not modified' in str(e):
             return None
         raise
     except TelegramError:
         # Best-effort: ignore other transient editing errors
+        try:
+            logger.error("TG API <- editMessageText TelegramError (non-400)")
+        except Exception:
+            pass
         return None
 
 
 async def safe_edit_caption(message, caption, reply_markup=None, parse_mode=None):
     try:
-        return await message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        try:
+            kb_summary = None
+            if reply_markup and hasattr(reply_markup, 'inline_keyboard'):
+                rows = reply_markup.inline_keyboard or []
+                kb_summary = f"rows={len(rows)} cols={[len(r) for r in rows]}"
+            logger.info(
+                f"TG API -> editMessageCaption chat_id={getattr(message, 'chat_id', None)} message_id={getattr(message, 'message_id', None)} parse_mode={parse_mode} caption_len={len(caption or '')} {kb_summary or ''}"
+            )
+        except Exception:
+            pass
+        resp = await message.edit_caption(caption=caption, reply_markup=reply_markup, parse_mode=parse_mode)
+        try:
+            logger.info(
+                f"TG API <- editMessageCaption OK chat_id={getattr(message, 'chat_id', None)} message_id={getattr(message, 'message_id', None)}"
+            )
+        except Exception:
+            pass
+        return resp
     except BadRequest as e:
+        try:
+            logger.error(
+                f"TG API <- editMessageCaption 400 BadRequest: {str(e)} | caption_preview={(caption or '')[:200]!r}")
+        except Exception:
+            pass
         if 'Message is not modified' in str(e):
             return None
         raise
     except TelegramError:
+        try:
+            logger.error("TG API <- editMessageCaption TelegramError (non-400)")
+        except Exception:
+            pass
         return None
 
 

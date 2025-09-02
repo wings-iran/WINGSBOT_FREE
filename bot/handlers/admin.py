@@ -1710,7 +1710,13 @@ async def admin_panel_inbounds_menu(update: Update, context: ContextTypes.DEFAUL
     keyboard.append([InlineKeyboardButton("\u2795 افزودن اینباند جدید", callback_data="inbound_add_start")])
     keyboard.append([InlineKeyboardButton("\U0001F519 بازگشت به لیست پنل‌ها", callback_data="admin_panels_menu")])
 
-    await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(keyboard))
+    try:
+        await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(keyboard))
+    except Exception as e:
+        try:
+            logger.error(f"admin_panel_inbounds_menu edit failed: {e} | text_preview={(text or '')[:180]!r}")
+        except Exception:
+            pass
     return ADMIN_PANEL_INBOUNDS_MENU
 
 
@@ -1719,19 +1725,31 @@ async def admin_panel_inbounds_refresh(update: Update, context: ContextTypes.DEF
     await query.answer()
     panel_id = context.user_data.get('editing_panel_id_for_inbounds')
     if not panel_id:
-        await query.answer("شناسه پنل نامعتبر است", show_alert=True)
+        try:
+            await query.answer("شناسه پنل نامعتبر است", show_alert=True)
+        except Exception as e:
+            try:
+                logger.error(f"query.answer failed (invalid panel_id): {e}")
+            except Exception:
+                pass
         return ADMIN_PANELS_MENU
     prow = query_db("SELECT * FROM panels WHERE id = ?", (panel_id,), one=True) or {}
     ptype = (prow.get('panel_type') or 'marzban').lower()
     if ptype not in ('marzban', 'marzneshin'):
-        await query.answer("رفرش برای این نوع پنل پشتیبانی نمی‌شود.", show_alert=True)
+        try:
+            await query.answer("رفرش برای این نوع پنل پشتیبانی نمی‌شود.", show_alert=True)
+        except Exception:
+            pass
         return await admin_panel_inbounds_menu(update, context)
     # Try to fetch inbounds
     try:
         api = VpnPanelAPI(panel_id=panel_id)
         found, msg = getattr(api, 'list_inbounds', lambda: (None, 'NA'))()
         if not found:
-            await query.answer(f"ناموفق: {msg}", show_alert=True)
+            try:
+                await query.answer(f"ناموفق: {msg}", show_alert=True)
+            except Exception:
+                pass
             return await admin_panel_inbounds_menu(update, context)
         count_before = query_db("SELECT COUNT(1) AS c FROM panel_inbounds WHERE panel_id = ?", (panel_id,), one=True) or {'c': 0}
         for ib in found[:200]:
@@ -1741,10 +1759,19 @@ async def admin_panel_inbounds_refresh(update: Update, context: ContextTypes.DEF
                 execute_db("INSERT OR IGNORE INTO panel_inbounds (panel_id, protocol, tag) VALUES (?, ?, ?)", (panel_id, proto, tag))
         count_after = query_db("SELECT COUNT(1) AS c FROM panel_inbounds WHERE panel_id = ?", (panel_id,), one=True) or {'c': 0}
         diff = int(count_after.get('c') or 0) - int(count_before.get('c') or 0)
-        await query.answer(f"به‌روزرسانی شد (+{max(diff,0)} مورد)", show_alert=True)
+        try:
+            await query.answer(f"به‌روزرسانی شد (+{max(diff,0)} مورد)", show_alert=True)
+        except Exception as e:
+            try:
+                logger.error(f"query.answer failed on refresh: {e}")
+            except Exception:
+                pass
     except Exception as e:
         logger.error(f"inbounds refresh failed for panel {panel_id}: {e}")
-        await query.answer("خطا در بروزرسانی اینباندها", show_alert=True)
+        try:
+            await query.answer("خطا در بروزرسانی اینباندها", show_alert=True)
+        except Exception:
+            pass
     return await admin_panel_inbounds_menu(update, context)
 
 
