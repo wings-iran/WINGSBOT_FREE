@@ -534,7 +534,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(admin_wallet_tx_view, pattern=r'^wallet_tx_view_\d+$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_wallet_tx_approve, pattern=r'^wallet_tx_approve_\d+$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_wallet_tx_reject, pattern=r'^wallet_tx_reject_\d+$'), group=3)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_wallet_adjust_text_router), group=-2)
+    # Place before other generic text handlers to ensure it captures admin adjust flow
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_wallet_adjust_text_router), group=-4)
 
     admin_reply_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(admin_ticket_reply_start, pattern=r'^ticket_reply_\d+$')],

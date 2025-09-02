@@ -2581,11 +2581,9 @@ async def admin_wallet_adjust_start(update: Update, context: ContextTypes.DEFAUL
     context.user_data['wallet_adjust_direction'] = direc
     # Two-step numeric: 1) ask user id, 2) ask amount
     context.user_data['awaiting_admin'] = 'wallet_adjust_user_id'
-    # Delete previous prompt if exists
     try:
-        last_prompt_id = context.user_data.get('wallet_adjust_prompt_msg')
-        if last_prompt_id:
-            await context.bot.delete_message(chat_id=query.message.chat_id, message_id=last_prompt_id)
+        from ..config import logger as _lg
+        _lg.debug(f"wallet_adjust_start: dir={direc} awaiting={context.user_data.get('awaiting_admin')}")
     except Exception:
         pass
     hint = "افزایش" if direc == 'credit' else "کاهش"
@@ -2619,6 +2617,11 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
     if not _is_admin(update.effective_user.id):
         return ConversationHandler.END
     awaiting = context.user_data.get('awaiting_admin')
+    try:
+        from ..config import logger as _lg
+        _lg.debug(f"admin_wallet_adjust_text_router: awaiting={awaiting} text={(update.message.text or '')[:50]}")
+    except Exception:
+        pass
     text = _normalize_digits((update.message.text or '').strip())
     # Step 1: ask user id
     if awaiting == 'wallet_adjust_user_id':
