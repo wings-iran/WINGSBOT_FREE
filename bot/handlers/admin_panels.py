@@ -185,7 +185,7 @@ async def admin_panel_inbounds_menu(update: Update, context: ContextTypes.DEFAUL
     ptype = (panel.get('panel_type') or 'marzban').lower() if panel else 'marzban'
     if ptype in ('marzban', 'marzneshin'):
         keyboard.append([InlineKeyboardButton("\U0001F504 بروزرسانی اینباندها", callback_data="inbound_refresh")])
-    keyboard.append([InlineKeyboardButton("\u2795 افزودن اینباند جدید", callback_data="inbound_add_start")])
+    # Removed add inbound button globally
     keyboard.append([InlineKeyboardButton("\U0001F519 بازگشت به لیست پنل‌ها", callback_data="admin_panels_menu")])
 
     await _safe_edit_text(query.message, text, reply_markup=InlineKeyboardMarkup(keyboard))

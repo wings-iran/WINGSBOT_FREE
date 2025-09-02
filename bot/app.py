@@ -116,7 +116,6 @@ from .handlers.admin_panels import (
     admin_panel_add_start,
     admin_panel_delete,
     admin_panel_inbounds_menu,
-    admin_panel_inbound_add_start,
     admin_panel_inbound_delete,
     admin_panel_inbound_receive_protocol,
     admin_panel_inbound_receive_tag,
@@ -323,13 +322,10 @@ def build_application() -> Application:
             ADMIN_PANEL_AWAIT_USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_user)],
             ADMIN_PANEL_AWAIT_PASS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_save)],
             ADMIN_PANEL_INBOUNDS_MENU: [
-                CallbackQueryHandler(admin_panel_inbound_add_start, pattern='^inbound_add_start$'),
                 CallbackQueryHandler(admin_panel_inbound_delete, pattern=r'^inbound_delete_'),
-                CallbackQueryHandler(admin_panel_inbounds_refresh, pattern=r'^inbound_refresh$'),
                 CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
             ],
-            ADMIN_PANEL_INBOUNDS_AWAIT_PROTOCOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_inbound_receive_protocol)],
-            ADMIN_PANEL_INBOUNDS_AWAIT_TAG: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_inbound_receive_tag)],
+            # Disabled add-inbound flow globally
             ADMIN_MESSAGES_MENU: [
                 CallbackQueryHandler(admin_messages_select, pattern='^msg_select_'),
                 CallbackQueryHandler(msg_add_start, pattern='^msg_add_start$'),
