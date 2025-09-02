@@ -476,28 +476,35 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
     await query.answer("در حال ساخت کلاینت روی اینباند انتخابی...")
     _, _, order_id, panel_id, inbound_id = query.data.split('_', 4)
     order_id, panel_id = int(order_id), int(panel_id)
+    # Capture current message meta for later edits
+    is_media = bool(query.message.photo or query.message.video or query.message.document)
+    base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
 
     order = query_db("SELECT * FROM orders WHERE id = ?", (order_id,), one=True)
     if not order:
-        is_media = bool(query.message.photo or query.message.video or query.message.document)
-        base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
         err_text = base_text + "\n\n\u274C سفارش یافت نشد."
         if is_media:
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         else:
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         return
     plan = query_db("SELECT * FROM plans WHERE id = ?", (order['plan_id'],), one=True)
 
     api = VpnPanelAPI(panel_id=panel_id)
     if not hasattr(api, 'create_user_on_inbound'):
-        is_media = bool(query.message.photo or query.message.video or query.message.document)
-        base_text = query.message.caption_html if is_media else (query.message.text_html or query.message.text or '')
         err_text = base_text + "\n\n\u274C این نوع پنل از ساخت بر اساس اینباند پشتیبانی نمی‌کند."
         if is_media:
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         else:
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         return
 
     username, sub_link, msg = api.create_user_on_inbound(inbound_id, order['user_id'], plan)
@@ -508,6 +515,10 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         else:
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         return
 
     # Build direct configs from inbound where possible; fallback to fetching sub content
@@ -573,12 +584,21 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             await _safe_edit_caption(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='admin_main')]]))
         else:
             await _safe_edit_text(query.message, ok_text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='admin_main')]]))
+        # Ensure keyboard is cleared from selection state
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
     except TelegramError as e:
         err_text = base_text + f"\n\n\u26A0\uFE0F **خطا در ارسال به کاربر:** {e}"
         if is_media:
             await _safe_edit_caption(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
         else:
             await _safe_edit_text(query.message, err_text, parse_mode=ParseMode.HTML, reply_markup=None)
+        try:
+            await query.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
 
 
 async def admin_review_order_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
