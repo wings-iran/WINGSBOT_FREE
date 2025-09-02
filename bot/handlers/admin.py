@@ -2579,8 +2579,8 @@ async def admin_wallet_adjust_start(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     direc = 'credit' if query.data.endswith('credit') else 'debit'
     context.user_data['wallet_adjust_direction'] = direc
-    # Prefer forward-based identification
-    context.user_data['awaiting_admin'] = 'wallet_adjust_forward'
+    # Two-step numeric: 1) ask user id, 2) ask amount
+    context.user_data['awaiting_admin'] = 'wallet_adjust_user_id'
     # Delete previous prompt if exists
     try:
         last_prompt_id = context.user_data.get('wallet_adjust_prompt_msg')
@@ -2592,7 +2592,7 @@ async def admin_wallet_adjust_start(update: Update, context: ContextTypes.DEFAUL
     sent = await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=(f"{hint} دستی موجودی\n\n"
-              f"1) یک پیام از کاربر هدف را برای ربات فوروارد کنید تا آیدی شناسایی شود.\n"
+              f"1) آیدی عددی کاربر را ارسال کنید.\n"
               f"2) سپس مبلغ را وارد کنید."),
         parse_mode=ParseMode.HTML,
     )
@@ -2620,15 +2620,15 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
         return ConversationHandler.END
     awaiting = context.user_data.get('awaiting_admin')
     text = _normalize_digits((update.message.text or '').strip())
-    # Step 1: expecting a forwarded message from the user
-    if awaiting == 'wallet_adjust_forward':
-        fwd = getattr(update.message, 'forward_from', None)
-        if not fwd or not getattr(fwd, 'id', None):
-            await update.message.reply_text("❌ لطفا یک پیام از کاربر هدف را فوروارد کنید تا آیدی شناسایی شود. اگر فوروارد ناممکن است، آیدی عددی را به صورت دستی ارسال کنید.")
+    # Step 1: ask user id
+    if awaiting == 'wallet_adjust_user_id':
+        try:
+            uid = int(re.findall(r"\d+", text)[0])
+        except Exception:
+            await update.message.reply_text("❌ آیدی عددی نامعتبر. دوباره ارسال کنید.")
             raise ApplicationHandlerStop
-        context.user_data['wallet_adjust_user'] = int(fwd.id)
+        context.user_data['wallet_adjust_user'] = uid
         context.user_data['awaiting_admin'] = 'wallet_adjust_amount_only'
-        # ask amount
         try:
             last_prompt_id = context.user_data.get('wallet_adjust_prompt_msg')
             if last_prompt_id:
