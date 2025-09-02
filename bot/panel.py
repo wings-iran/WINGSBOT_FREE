@@ -115,6 +115,17 @@ class MarzbanAPI(BasePanelAPI):
                     # Maybe config returns nested inbounds
                     if isinstance(data, dict) and isinstance(data.get('config', {}).get('inbounds'), list):
                         items = data.get('config', {}).get('inbounds')
+                # Flatten arbitrary object-of-arrays shape as per docs
+                if not isinstance(items, list) and isinstance(data, dict):
+                    flat = []
+                    try:
+                        for v in data.values():
+                            if isinstance(v, list) and v and isinstance(v[0], dict):
+                                flat.extend(v)
+                    except Exception:
+                        flat = []
+                    if flat:
+                        items = flat
                 if not isinstance(items, list):
                     last_error = "ساختار اینباندها قابل تشخیص نیست"
                     continue
@@ -124,10 +135,12 @@ class MarzbanAPI(BasePanelAPI):
                         continue
                     inbounds.append({
                         'id': it.get('id') or it.get('tag') or it.get('remark') or '',
-                        'remark': it.get('remark') or it.get('tag') or str(it.get('id') or ''),
+                        'remark': it.get('tag') or it.get('remark') or str(it.get('id') or ''),
                         'protocol': it.get('protocol') or it.get('type') or 'unknown',
                         'port': it.get('port') or 0,
                         'tag': it.get('tag') or it.get('remark') or str(it.get('id') or ''),
+                        'network': it.get('network') or '',
+                        'tls': it.get('tls') or '',
                     })
                 try:
                     logger.info(f"Marzban list_inbounds <- OK {len(inbounds)} items from {url}")
@@ -2704,10 +2717,13 @@ class MarzneshinAPI(BasePanelAPI):
                                 if not isinstance(it, dict):
                                     continue
                                 inbounds.append({
-                                    'id': it.get('id'),
-                                    'remark': it.get('remark') or it.get('tag') or str(it.get('id')),
+                                    'id': it.get('id') or it.get('tag') or it.get('remark') or '',
+                                    'remark': it.get('tag') or it.get('remark') or str(it.get('id') or ''),
                                     'protocol': it.get('protocol') or it.get('type') or 'unknown',
-                                    'port': it.get('port') or it.get('listen_port') or 0,
+                                    'port': it.get('port') or 0,
+                                    'tag': it.get('tag') or it.get('remark') or str(it.get('id') or ''),
+                                    'network': it.get('network') or '',
+                                    'tls': it.get('tls') or '',
                                 })
                             return inbounds, "Success"
                 if last_err:
