@@ -1248,7 +1248,8 @@ async def reseller_upload_start_crypto(update: Update, context: ContextTypes.DEF
 
 
 async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if context.user_data.get('awaiting') != 'reseller_upload':
+    # Accept if explicitly awaiting OR if payment context exists (fallback when user skips the button)
+    if context.user_data.get('awaiting') != 'reseller_upload' and not context.user_data.get('reseller_payment'):
         return ConversationHandler.END
     user_id = update.effective_user.id
     pay = context.user_data.get('reseller_payment') or {}
