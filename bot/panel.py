@@ -570,7 +570,7 @@ class XuiAPI(BasePanelAPI):
                     except Exception:
                         used_bytes = down + up
                     if used_bytes == 0:
-                        # Fetch from getClientTraffics endpoint
+                        # Fetch from getClientTraffics endpoint (by inbound)
                         stats = self._fetch_client_traffics(inbound_id) or []
                         for s in stats:
                             if (s.get('email') or s.get('name')) == username:
@@ -585,6 +585,7 @@ class XuiAPI(BasePanelAPI):
                                 used_bytes = d + u
                                 break
                         if used_bytes == 0:
+                            # Direct by email
                             s = self._fetch_client_traffic_by_email(username)
                             if isinstance(s, dict):
                                 try:
@@ -595,11 +596,7 @@ class XuiAPI(BasePanelAPI):
                                     u = int(s.get('up') or s.get('upload') or 0)
                                 except Exception:
                                     u = 0
-                                try:
-                                    total_used = int(s.get('total') or 0)
-                                except Exception:
-                                    total_used = 0
-                                used_bytes = total_used if total_used > 0 else (d + u)
+                                used_bytes = d + u
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
@@ -1661,11 +1658,7 @@ class ThreeXuiAPI(BasePanelAPI):
                                     u = int(s.get('up') or s.get('upload') or 0)
                                 except Exception:
                                     u = 0
-                                try:
-                                    total_used = int(s.get('total') or 0)
-                                except Exception:
-                                    total_used = 0
-                                used_bytes = total_used if total_used > 0 else (d + u)
+                                used_bytes = d + u
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
