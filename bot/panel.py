@@ -366,6 +366,26 @@ class XuiAPI(BasePanelAPI):
             logger.error(f"X-UI login error: {e}")
         return False
 
+    def _fetch_client_traffics(self, inbound_id: int):
+        endpoints = [
+            f"{self.base_url}/xui/API/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/panel/API/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/xui/api/inbounds/getClientTraffics/{inbound_id}",
+            f"{self.base_url}/panel/api/inbounds/getClientTraffics/{inbound_id}",
+        ]
+        for url in endpoints:
+            try:
+                resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                items = data.get('obj') if isinstance(data, dict) else data
+                if isinstance(items, list):
+                    return items
+            except Exception:
+                continue
+        return []
+
     def list_inbounds(self):
         if not self.get_token():
             return None, "خطا در ورود به پنل X-UI"
@@ -515,7 +535,7 @@ class XuiAPI(BasePanelAPI):
             for c in clients:
                 if c.get('email') == username:
                     total_bytes = int(c.get('totalGB', 0) or 0)
-                    # Try compute used traffic if present in stats
+                    # Try compute used traffic if present in client or stats
                     used_bytes = 0
                     try:
                         down = int(c.get('downlink', 0) or 0)
@@ -529,6 +549,21 @@ class XuiAPI(BasePanelAPI):
                         used_bytes = int(c.get('total', 0) or 0)
                     except Exception:
                         used_bytes = down + up
+                    if used_bytes == 0:
+                        # Fetch from getClientTraffics endpoint
+                        stats = self._fetch_client_traffics(inbound_id) or []
+                        for s in stats:
+                            if (s.get('email') or s.get('name')) == username:
+                                try:
+                                    d = int(s.get('down') or s.get('download') or 0)
+                                except Exception:
+                                    d = 0
+                                try:
+                                    u = int(s.get('up') or s.get('upload') or 0)
+                                except Exception:
+                                    u = 0
+                                used_bytes = d + u
+                                break
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
@@ -1519,6 +1554,25 @@ class ThreeXuiAPI(BasePanelAPI):
                         used_bytes = int(c.get('total', 0) or 0)
                     except Exception:
                         used_bytes = down + up
+                    if used_bytes == 0:
+                        # try stats endpoint
+                        stats = []
+                        try:
+                            stats = self._fetch_client_traffics(inbound_id)
+                        except Exception:
+                            stats = []
+                        for s in (stats or []):
+                            if (s.get('email') or s.get('name')) == username:
+                                try:
+                                    d = int(s.get('down') or s.get('download') or 0)
+                                except Exception:
+                                    d = 0
+                                try:
+                                    u = int(s.get('up') or s.get('upload') or 0)
+                                except Exception:
+                                    u = 0
+                                used_bytes = d + u
+                                break
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
