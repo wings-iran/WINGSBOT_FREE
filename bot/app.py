@@ -318,6 +318,7 @@ def build_application() -> Application:
             SETTINGS_AWAIT_USD_RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_usd_rate_save)],
             SETTINGS_AWAIT_SIGNUP_BONUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, premium_admin_set_signup_bonus_amount_save)],
             SETTINGS_AWAIT_GATEWAY_API: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_gateway_api_save)],
+            ADMIN_RESELLER_AWAIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reseller_set_value_save)],
         },
         fallbacks=[
             CommandHandler('cancel', cancel_admin_conversation),

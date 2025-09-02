@@ -1277,7 +1277,8 @@ async def admin_reseller_set_value_start(update: Update, context: ContextTypes.D
     prompt = mapping[query.data][1]
     context.user_data['reseller_edit_key'] = key
     await query.message.edit_text(prompt)
-    return SETTINGS_AWAIT_USD_RATE
+    from ..states import ADMIN_RESELLER_AWAIT_VALUE
+    return ADMIN_RESELLER_AWAIT_VALUE
 
 
 async def admin_reseller_set_value_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
