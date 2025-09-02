@@ -285,6 +285,7 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_wallet_tx_view, pattern=r'^wallet_tx_view_\d+$'),
                 CallbackQueryHandler(admin_wallet_tx_approve, pattern=r'^wallet_tx_approve_\d+$'),
                 CallbackQueryHandler(admin_wallet_tx_reject, pattern=r'^wallet_tx_reject_\d+$'),
+                CallbackQueryHandler(admin_wallet_adjust_start, pattern=r'^wallet_adjust_start_(credit|debit)$'),
             ],
                          ADMIN_CARDS_MENU: [
                  CallbackQueryHandler(admin_card_add_start, pattern='^card_add_start$'),
