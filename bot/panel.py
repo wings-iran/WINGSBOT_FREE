@@ -386,6 +386,26 @@ class XuiAPI(BasePanelAPI):
                 continue
         return []
 
+    def _fetch_client_traffic_by_email(self, email: str):
+        endpoints = [
+            f"{self.base_url}/xui/api/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/panel/api/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/xui/API/inbounds/getClientTraffics/{email}",
+            f"{self.base_url}/panel/API/inbounds/getClientTraffics/{email}",
+        ]
+        for url in endpoints:
+            try:
+                resp = self.session.get(url, headers={'Accept': 'application/json'}, timeout=12)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                obj = data.get('obj') if isinstance(data, dict) else data
+                if isinstance(obj, dict):
+                    return obj
+            except Exception:
+                continue
+        return None
+
     def list_inbounds(self):
         if not self.get_token():
             return None, "خطا در ورود به پنل X-UI"
@@ -564,6 +584,22 @@ class XuiAPI(BasePanelAPI):
                                     u = 0
                                 used_bytes = d + u
                                 break
+                        if used_bytes == 0:
+                            s = self._fetch_client_traffic_by_email(username)
+                            if isinstance(s, dict):
+                                try:
+                                    d = int(s.get('down') or s.get('download') or 0)
+                                except Exception:
+                                    d = 0
+                                try:
+                                    u = int(s.get('up') or s.get('upload') or 0)
+                                except Exception:
+                                    u = 0
+                                try:
+                                    total_used = int(s.get('total') or 0)
+                                except Exception:
+                                    total_used = 0
+                                used_bytes = total_used if total_used > 0 else (d + u)
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
@@ -1573,6 +1609,23 @@ class ThreeXuiAPI(BasePanelAPI):
                                     u = 0
                                 used_bytes = d + u
                                 break
+                        if used_bytes == 0:
+                            # direct by email
+                            s = self._fetch_client_traffic_by_email(username)
+                            if isinstance(s, dict):
+                                try:
+                                    d = int(s.get('down') or s.get('download') or 0)
+                                except Exception:
+                                    d = 0
+                                try:
+                                    u = int(s.get('up') or s.get('upload') or 0)
+                                except Exception:
+                                    u = 0
+                                try:
+                                    total_used = int(s.get('total') or 0)
+                                except Exception:
+                                    total_used = 0
+                                used_bytes = total_used if total_used > 0 else (d + u)
                     expiry_ms = int(c.get('expiryTime', 0) or 0)
                     expire = int(expiry_ms / 1000) if expiry_ms > 0 else 0
                     subid = c.get('subId') or ''
