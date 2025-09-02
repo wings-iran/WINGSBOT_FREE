@@ -13,6 +13,14 @@ from ..helpers.tg import safe_edit_text as _safe_edit, ltr_code, notify_admins
 from ..helpers.flow import set_flow, clear_flow
 
 
+def _strike_text(text: str) -> str:
+    try:
+        # Use combining long stroke overlay to simulate strikethrough in button text
+        return ''.join(ch + '\u0336' for ch in (text or ''))
+    except Exception:
+        return text
+
+
 async def start_purchase_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
@@ -44,7 +52,9 @@ async def start_purchase_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
         label_price = f"{price:,} تومان"
         if r_percent > 0:
             new_price = int(price * (100 - r_percent) / 100)
-            label_price = f"{price:,} ➜ {new_price:,} تومان"
+            old = f"{price:,}"
+            old_strike = _strike_text(old)
+            label_price = f"{old_strike}  {new_price:,} تومان"
         keyboard.append([InlineKeyboardButton(f"{plan['name']} - {label_price}", callback_data=f"select_plan_{plan['id']}")])
     keyboard.append([InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')])
 
