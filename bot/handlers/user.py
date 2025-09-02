@@ -1066,11 +1066,24 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # If already active reseller and not expired
     rs = query_db("SELECT status, expires_at, used_purchases, max_purchases, discount_percent FROM resellers WHERE user_id = ?", (uid,), one=True)
     if rs:
+        # Days left display
+        exp_str = rs.get('expires_at') or ''
+        expire_display = exp_str
+        try:
+            if exp_str:
+                exp_dt = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
+                now_dt = datetime.now()
+                seconds = (exp_dt - now_dt).total_seconds()
+                days_left = max(0, int(seconds // 86400))
+                expire_display = f"{days_left} روز مانده"
+        except Exception:
+            expire_display = exp_str or 'نامعلوم'
+
         text = (
             f"\U0001F4B5 وضعیت نمایندگی شما\n\n"
             f"درصد تخفیف: {int(rs.get('discount_percent') or settings.get('reseller_discount_percent') or 50)}%\n"
             f"سقف خرید: {int(rs.get('used_purchases') or 0)}/{int(rs.get('max_purchases') or settings.get('reseller_max_purchases') or 10)}\n"
-            f"انقضا: {rs.get('expires_at')}\n"
+            f"انقضا: {expire_display}\n"
         )
         kb = [[InlineKeyboardButton("\U0001F519 بازگشت", callback_data='start_main')]]
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb))
