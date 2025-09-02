@@ -56,7 +56,7 @@ from .handlers.admin import (
     admin_xui_choose_inbound,
     admin_reseller_menu, admin_toggle_reseller, admin_reseller_requests, admin_reseller_set_value_start, admin_reseller_set_value_save, admin_reseller_approve, admin_reseller_reject,
 )
-from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, wallet_upload_router, refresh_service_link, revoke_key, reseller_menu, reseller_pay_start, reseller_pay_card, reseller_pay_crypto, reseller_pay_gateway, reseller_verify_gateway, reseller_upload_start_card, reseller_upload_start_crypto, reseller_upload_router
+from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, composite_upload_router, refresh_service_link, revoke_key, reseller_menu, reseller_pay_start, reseller_pay_card, reseller_pay_crypto, reseller_pay_gateway, reseller_verify_gateway, reseller_upload_start_card, reseller_upload_start_crypto, reseller_upload_router
 from .handlers.purchase import (
     start_purchase_flow,
     show_plan_confirmation,
@@ -472,7 +472,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(wallet_select_amount, pattern=r'^wallet_amt_'), group=3)
     application.add_handler(CallbackQueryHandler(wallet_upload_start_card, pattern=r'^wallet_upload_start_card$'), group=3)
     application.add_handler(CallbackQueryHandler(wallet_upload_start_crypto, pattern=r'^wallet_upload_start_crypto$'), group=3)
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, wallet_upload_router), group=2)
+    # Unified upload router handles both wallet and reseller
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, composite_upload_router), group=2)
     application.add_handler(CallbackQueryHandler(wallet_verify_gateway, pattern=r'^wallet_verify_gateway$'), group=3)
 
     # Reseller flows
@@ -483,7 +484,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(reseller_verify_gateway, pattern=r'^reseller_verify_gateway$'), group=3)
     application.add_handler(CallbackQueryHandler(reseller_upload_start_card, pattern=r'^reseller_upload_start_card$'), group=3)
     application.add_handler(CallbackQueryHandler(reseller_upload_start_crypto, pattern=r'^reseller_upload_start_crypto$'), group=3)
-    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, reseller_upload_router), group=2)
+    # Already covered by composite router
 
     # Admin tickets (global)
     application.add_handler(CallbackQueryHandler(admin_tickets_menu, pattern=r'^admin_tickets_menu$'), group=3)

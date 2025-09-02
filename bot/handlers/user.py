@@ -1291,6 +1291,15 @@ async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data.pop('reseller_intent', None)
     return ConversationHandler.END
 
+
+async def composite_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    flag = context.user_data.get('awaiting')
+    if flag == 'wallet_upload':
+        return await wallet_upload_router(update, context)
+    if flag == 'reseller_upload' or context.user_data.get('reseller_payment') or context.user_data.get('reseller_intent'):
+        return await reseller_upload_router(update, context)
+    return ConversationHandler.END
+
 async def wallet_upload_start_card(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
