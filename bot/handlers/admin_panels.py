@@ -165,7 +165,7 @@ async def admin_panel_inbounds_menu(update: Update, context: ContextTypes.DEFAUL
 
     await query.answer()
 
-    panel = query_db("SELECT name FROM panels WHERE id = ?", (panel_id,), one=True)
+    panel = query_db("SELECT name, panel_type FROM panels WHERE id = ?", (panel_id,), one=True)
     inbounds = query_db("SELECT id, protocol, tag FROM panel_inbounds WHERE panel_id = ? ORDER BY id", (panel_id,))
 
     text = f" **مدیریت اینباندهای پنل: {panel['name']}**\n\n"
@@ -181,6 +181,10 @@ async def admin_panel_inbounds_menu(update: Update, context: ContextTypes.DEFAUL
                 InlineKeyboardButton("\u274C حذف", callback_data=f"inbound_delete_{i['id']}")
             ])
 
+    # Allow auto-refresh for Marzban/Marzneshin types
+    ptype = (panel.get('panel_type') or 'marzban').lower() if panel else 'marzban'
+    if ptype in ('marzban', 'marzneshin'):
+        keyboard.append([InlineKeyboardButton("\U0001F504 بروزرسانی اینباندها", callback_data="inbound_refresh")])
     keyboard.append([InlineKeyboardButton("\u2795 افزودن اینباند جدید", callback_data="inbound_add_start")])
     keyboard.append([InlineKeyboardButton("\U0001F519 بازگشت به لیست پنل‌ها", callback_data="admin_panels_menu")])
 

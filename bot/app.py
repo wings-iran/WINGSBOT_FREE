@@ -325,6 +325,7 @@ def build_application() -> Application:
             ADMIN_PANEL_INBOUNDS_MENU: [
                 CallbackQueryHandler(admin_panel_inbound_add_start, pattern='^inbound_add_start$'),
                 CallbackQueryHandler(admin_panel_inbound_delete, pattern=r'^inbound_delete_'),
+                CallbackQueryHandler(admin_panel_inbounds_refresh, pattern=r'^inbound_refresh$'),
                 CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
             ],
             ADMIN_PANEL_INBOUNDS_AWAIT_PROTOCOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_inbound_receive_protocol)],
