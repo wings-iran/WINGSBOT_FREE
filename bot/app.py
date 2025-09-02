@@ -392,6 +392,9 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(admin_wallets_menu, pattern='^admin_wallets_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_settings_manage, pattern='^admin_settings_manage$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_admins_menu, pattern='^admin_admins_menu$'), group=3)
+    # Reseller approvals (global)
+    application.add_handler(CallbackQueryHandler(admin_reseller_approve, pattern=r'^reseller_approve_\d+$'), group=3)
+    application.add_handler(CallbackQueryHandler(admin_reseller_reject, pattern=r'^reseller_reject_\d+$'), group=3)
     # Reseller user flows
     application.add_handler(CallbackQueryHandler(reseller_menu, pattern=r'^reseller_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(reseller_pay_start, pattern=r'^reseller_pay_start$'), group=3)
