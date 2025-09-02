@@ -1,220 +1,105 @@
-## Quick Start
+## نصب و راه‌اندازی سریع (فارسی)
 
-### Option A) One-liner (bash installer)
+این راهنما طوری نوشته شده که اگر هیچ تجربه‌ای هم نداشته باشید، بتوانید ربات را راه‌اندازی کنید.
 
-```
-curl -sSL https://raw.githubusercontent.com/wings-iran/WINGSBOT_FREE/branch/install.sh | bash
-```
+### روش ۱: نصب خودکار با اسکریپت
 
-Or clone and run locally:
+1) وارد سرور لینوکسی خود شوید (Ubuntu 20.04/22.04 پیشنهاد می‌شود).
 
-```
+2) دستورهای زیر را اجرا کنید:
+
+```bash
+sudo apt update && sudo apt install -y git curl python3 python3-venv python3-pip
 git clone https://github.com/wings-iran/WINGSBOT_FREE
 cd WINGSBOT_FREE
 bash install.sh
 ```
 
-This will:
-- Create `.venv` and install dependencies
-- Prompt you for `BOT_TOKEN`, `ADMIN_ID`, `CHANNEL_ID` to write `.env`
-- Initialize the SQLite database
-- Generate a `wingsbot.service` example
+3) هنگام اجرای install.sh از شما سوال می‌شود:
+- BOT_TOKEN: توکن ربات از BotFather
+- ADMIN_ID: آیدی عددی ادمین (از @userinfobot)
+- CHANNEL_ID: آیدی کانال یا @نام‌کاربری (اختیاری)
 
-Run now:
+4) اجرای ربات:
 
+```bash
+source .venv/bin/activate
+python -m bot.run
 ```
-source .venv/bin/activate && python -m bot.run
-```
 
-Enable as a service (optional):
+5) اجرای دائمی (اختیاری): فایل wingsbot.service ساخته می‌شود. می‌توانید آن را به systemd بدهید:
 
-```
+```bash
 sudo cp wingsbot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now wingsbot
 ```
 
-### Option B) Docker
+برای مشاهده وضعیت:
 
+```bash
+sudo systemctl status wingsbot
 ```
+
+برای دیدن لاگ زنده:
+
+```bash
+sudo journalctl -u wingsbot -f --no-pager
+```
+
+### روش ۲: اجرای ساده با Docker
+
+1) مخزن را دریافت کنید و فایل محیط را بسازید:
+
+```bash
 git clone https://github.com/wings-iran/WINGSBOT_FREE
 cd WINGSBOT_FREE
-cp .env.example .env  # create and fill with BOT_TOKEN, ADMIN_ID, CHANNEL_ID
+cp .env.example .env
+# سپس فایل .env را با مقادیر BOT_TOKEN و ADMIN_ID ویرایش کنید
+```
+
+2) اجرای کانتینر:
+
+```bash
 docker compose up -d --build
 ```
 
-Logs:
+مشاهده لاگ‌ها:
 
-```
+```bash
 docker compose logs -f
 ```
 
-### Environment Variables
+### نکات مهم پیکربندی
 
-- `BOT_TOKEN`: Telegram bot token
-- `ADMIN_ID`: Primary admin numeric user ID
-- `CHANNEL_ID`: Channel ID or @username (for force-join, optional)
-- Optional webhook vars: `USE_WEBHOOK`, `WEBHOOK_URL`, `WEBHOOK_PORT`, `WEBHOOK_PATH`, `WEBHOOK_SECRET`
+- BOT_TOKEN: توکن ربات از BotFather (الزامی)
+- ADMIN_ID: آیدی عددی ادمین اصلی (الزامی)
+- CHANNEL_ID: آیدی/نام کانال برای اجباری‌کردن عضویت (اختیاری)
+- USE_WEBHOOK و سایر مقادیر وبهوک فقط زمانی نیاز است که بخواهید با وبهوک اجرا کنید.
 
-### Update
+### بروزرسانی ربات
 
-```
+```bash
 git pull
 source .venv/bin/activate && pip install -r requirements.txt
-systemctl restart wingsbot  # if using systemd
+systemctl restart wingsbot  # اگر با systemd اجرا می‌کنید
 ```
 
-WINGSBOT_FREE – راهنمای نصب و مدیریت ربات فروش
+### رفع اشکال متداول
 
-این پروژه یک ربات تلگرامی برای مدیریت فروش سرویس‌های اینترنتی و اشتراک‌هاست.
-با نصب این ربات روی سرور لینوکسی (Ubuntu) می‌توانید به‌صورت خودکار فرآیند فروش، پرداخت، مدیریت کاربر و پشتیبانی را انجام دهید.
-
-✨ امکانات ربات
-
-پشتیبانی از پنل‌های مرزبان، مرزنشین، x_ui, 3x_ui, tx_ui و علیرضا
-
-فرآیند کامل خرید پلن، تخفیف و پرداخت:
-
-درگاه بانکی
-
-کارت به کارت
-
-کریپتو
-
-ارسال رسید و تایید توسط ادمین
-
-تمدید سرویس و دریافت آنی لینک سابسکریپشن
-
-کیف پول داخلی (شارژ و مشاهده تراکنش‌ها)
-
-سیستم تیکت و پشتیبانی
-
-بخش آموزش‌ها و معرفی به دوستان
-
-پنل مدیریت کامل برای ادمین
-
-📋 پیش‌نیازها
-
-سیستم عامل: Ubuntu 20.04 یا Ubuntu 22.04
-
-دسترسی: کاربر root یا کاربری با دسترسی sudo
-
-توکن ربات تلگرام: از ربات @BotFather
-
-شناسه عددی ادمین: از ربات @userinfobot
-
-🚀 مراحل نصب
-۱. بروزرسانی سرور و نصب پیش‌نیازها
+- اگر ربات بالا نمی‌آید، ابتدا لاگ را بررسی کنید:
 ```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install python3 python3-venv python3-pip git -y
+sudo journalctl -u wingsbot -f --no-pager
 ```
-۲. دریافت سورس ربات
+- از درست‌بودن توکن و ADMIN_ID در فایل .env مطمئن شوید.
+- اگر با Docker اجرا می‌کنید، `docker compose logs -f` را بررسی کنید.
+
+### حذف کامل (systemd)
+
 ```bash
-git clone https://github.com/wings-iran/WINGSBOT_FREE.git
-cd WINGSBOT_FREE
-```
-
-۳. ساخت محیط مجازی و نصب وابستگی‌ها
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-
-وقتی محیط مجازی فعال است، در ابتدای خط فرمان (.venv) دیده می‌شود.
-
-۴. تنظیم متغیرهای محیطی (ENV)
-
-یک فایل به نام sellerbot.env ایجاد کنید:
-```bash
-nano sellerbot.env
-```
-
-
-محتوا:
-```bash
-
-BOT_TOKEN=123456:ABC-DEF1234567890
-ADMIN_ID=1122334455
-CHANNEL_USERNAME=@YourChannel
-CHANNEL_ID=-1001234567890
-DB_NAME=bot.db
-```
-
-
-ذخیره: Ctrl + X → Y → Enter
-
-۵. انتقال پروژه به مسیر استاندارد
-```bash
-deactivate
-cd ..
-sudo mv WINGSBOT_FREE /opt/sellerbot
-```
-
-۶. ساخت سرویس systemd
-```bash
-sudo nano /etc/systemd/system/sellerbot.service
-```
-
-
-محتوا:
-```bash
-[Unit]
-Description=Seller Bot Service (WINGSBOT_FREE)
-After=network.target
-
-[Service]
-User=root
-WorkingDirectory=/opt/sellerbot
-EnvironmentFile=/opt/sellerbot/sellerbot.env
-ExecStart=/opt/sellerbot/.venv/bin/python3 /opt/sellerbot/main.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-
-ذخیره و خروج.
-
-۷. فعال‌سازی و اجرای ربات
-```bash
+sudo systemctl stop wingsbot
+sudo systemctl disable wingsbot
+sudo rm /etc/systemd/system/wingsbot.service
 sudo systemctl daemon-reload
-sudo systemctl enable sellerbot.service
-sudo systemctl start sellerbot.service
+rm -rf ~/WINGSBOT_FREE
 ```
-
-✅ بررسی وضعیت
-```bash
-sudo systemctl status sellerbot.service
-```
-
-باید حالت active (running) نمایش داده شود.
-اکنون در تلگرام دستور /admin را به ربات بفرستید.
-
-🛠 عیب‌یابی
-
-برای دیدن لاگ‌های زنده:
-```bash
-sudo journalctl -u sellerbot.service -f --no-pager
-```
-
-مقادیر داخل sellerbot.env باید بدون فاصله یا علامت " باشند.
-
-مطمئن شوید همه مراحل را درست اجرا کرده‌اید.
-
-🗑 حذف کامل ربات
-# توقف و غیرفعال‌سازی سرویس
-```bash
-sudo systemctl stop sellerbot.service
-sudo systemctl disable sellerbot.service
-```
-# حذف فایل سرویس
-sudo rm /etc/systemd/system/sellerbot.service
-sudo systemctl daemon-reload
-
-# حذف پروژه
-sudo rm -rf /opt/sellerbot
