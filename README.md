@@ -1,3 +1,69 @@
+## Quick Start
+
+### Option A) One-liner (bash installer)
+
+```
+curl -sSL https://raw.githubusercontent.com/wings-iran/WINGSBOT_FREE/branch/install.sh | bash
+```
+
+Or clone and run locally:
+
+```
+git clone https://github.com/wings-iran/WINGSBOT_FREE
+cd WINGSBOT_FREE
+bash install.sh
+```
+
+This will:
+- Create `.venv` and install dependencies
+- Prompt you for `BOT_TOKEN`, `ADMIN_ID`, `CHANNEL_ID` to write `.env`
+- Initialize the SQLite database
+- Generate a `wingsbot.service` example
+
+Run now:
+
+```
+source .venv/bin/activate && python -m bot.run
+```
+
+Enable as a service (optional):
+
+```
+sudo cp wingsbot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now wingsbot
+```
+
+### Option B) Docker
+
+```
+git clone https://github.com/wings-iran/WINGSBOT_FREE
+cd WINGSBOT_FREE
+cp .env.example .env  # create and fill with BOT_TOKEN, ADMIN_ID, CHANNEL_ID
+docker compose up -d --build
+```
+
+Logs:
+
+```
+docker compose logs -f
+```
+
+### Environment Variables
+
+- `BOT_TOKEN`: Telegram bot token
+- `ADMIN_ID`: Primary admin numeric user ID
+- `CHANNEL_ID`: Channel ID or @username (for force-join, optional)
+- Optional webhook vars: `USE_WEBHOOK`, `WEBHOOK_URL`, `WEBHOOK_PORT`, `WEBHOOK_PATH`, `WEBHOOK_SECRET`
+
+### Update
+
+```
+git pull
+source .venv/bin/activate && pip install -r requirements.txt
+systemctl restart wingsbot  # if using systemd
+```
+
 WINGSBOT_FREE – راهنمای نصب و مدیریت ربات فروش
 
 این پروژه یک ربات تلگرامی برای مدیریت فروش سرویس‌های اینترنتی و اشتراک‌هاست.
