@@ -1079,8 +1079,11 @@ async def reseller_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             expire_display = exp_str or 'نامعلوم'
 
+        status = (rs.get('status') or 'inactive').lower()
+        active_line = 'فعال' if status == 'active' and (not exp_str or expire_display != '0 روز مانده') else 'غیرفعال'
         text = (
             f"\U0001F4B5 وضعیت نمایندگی شما\n\n"
+            f"وضعیت: {active_line}\n"
             f"درصد تخفیف: {int(rs.get('discount_percent') or settings.get('reseller_discount_percent') or 50)}%\n"
             f"سقف خرید: {int(rs.get('used_purchases') or 0)}/{int(rs.get('max_purchases') or settings.get('reseller_max_purchases') or 10)}\n"
             f"انقضا: {expire_display}\n"

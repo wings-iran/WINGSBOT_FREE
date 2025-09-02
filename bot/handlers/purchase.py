@@ -28,15 +28,18 @@ async def start_purchase_flow(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Check reseller status for discount view
     uid = query.from_user.id
     reseller = query_db("SELECT discount_percent, expires_at, max_purchases, used_purchases, status FROM resellers WHERE user_id = ?", (uid,), one=True) or {}
-    # If expired, treat as no reseller
+    # Only show discount if reseller is active, not expired, and within cap
+    r_percent = 0
     try:
         if reseller:
             from datetime import datetime as _dt
-            if reseller.get('expires_at') and _dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") < _dt.now():
-                reseller = {}
+            is_active = str(reseller.get('status') or '').lower() == 'active'
+            not_expired = (not reseller.get('expires_at')) or (_dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") >= _dt.now())
+            within_cap = int(reseller.get('max_purchases') or 0) == 0 or int(reseller.get('used_purchases') or 0) < int(reseller.get('max_purchases') or 0)
+            if is_active and not_expired and within_cap:
+                r_percent = int((reseller.get('discount_percent') or 0) or 0)
     except Exception:
-        pass
-    r_percent = int((reseller.get('discount_percent') or 0) or 0)
+        r_percent = 0
     plans = query_db("SELECT id, name, price FROM plans ORDER BY price")
     if not plans:
         await _safe_edit(
