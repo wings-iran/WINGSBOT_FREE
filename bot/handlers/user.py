@@ -154,19 +154,80 @@ async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_
             )
         execute_db("INSERT INTO free_trials (user_id, timestamp) VALUES (?, ?)", (user_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
-        text = (
-            f"✅ کانفیگ تست رایگان شما با موفقیت ساخته شد!\n\n"
-            f"<b>حجم:</b> {trial_plan['traffic_gb']} گیگابایت\n"
-            f"<b>مدت اعتبار:</b> {trial_plan['duration_days']} روز\n\n"
-            f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n"
-            f"<b>آموزش اتصال :</b>\n"
-            f"https://t.me/madeingod_tm"
-        )
-        await query.message.edit_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]]),
-        )
+        # If panel is XUI-like, send direct configs instead of subscription link
+        try:
+            ptype_row = query_db("SELECT panel_type FROM panels WHERE id = ?", (first_panel['id'],), one=True) or {}
+            ptype = (ptype_row.get('panel_type') or '').lower()
+        except Exception:
+            ptype = ''
+        if ptype in ('xui','x-ui','3xui','3x-ui','alireza','txui','tx-ui','tx ui'):
+            confs = []
+            ib_id = None
+            # Prefer selected trial inbound
+            if xui_inb is not None:
+                ib_id = xui_inb
+            else:
+                # Fallback: first inbound
+                try:
+                    inbs, _m = getattr(panel_api, 'list_inbounds', lambda: (None,'NA'))()
+                    if inbs:
+                        ib_id = inbs[0].get('id')
+                except Exception:
+                    ib_id = None
+            if ib_id is not None and hasattr(panel_api, 'get_configs_for_user_on_inbound'):
+                try:
+                    confs = panel_api.get_configs_for_user_on_inbound(int(ib_id), marzban_username) or []
+                except Exception:
+                    confs = []
+            if not confs and isinstance(config_link, str) and config_link.startswith('http'):
+                # Decode subscription content as a fallback
+                try:
+                    confs = _fetch_subscription_configs(config_link)
+                except Exception:
+                    confs = []
+            if confs:
+                cfg_text = "\n".join(f"<code>{c}</code>" for c in confs)
+                footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
+                text = (
+                    f"✅ کانفیگ تست رایگان شما با موفقیت ساخته شد!\n\n"
+                    f"<b>حجم:</b> {trial_plan['traffic_gb']} گیگابایت\n"
+                    f"<b>مدت اعتبار:</b> {trial_plan['duration_days']} روز\n\n"
+                    f"<b>کانفیگ شما:</b>\n{cfg_text}\n\n" + footer
+                )
+                await query.message.edit_text(
+                    text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]]),
+                )
+            else:
+                # As a last resort, mention link but mark as fallback
+                text = (
+                    f"✅ کانفیگ تست رایگان شما با موفقیت ساخته شد!\n\n"
+                    f"<b>حجم:</b> {trial_plan['traffic_gb']} گیگابایت\n"
+                    f"<b>مدت اعتبار:</b> {trial_plan['duration_days']} روز\n\n"
+                    f"<b>لینک اشتراک (فقط درصورت نیاز):</b>\n<code>{config_link}</code>\n\n"
+                    f"<b>آموزش اتصال :</b>\nhttps://t.me/madeingod_tm"
+                )
+                await query.message.edit_text(
+                    text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]]),
+                )
+        else:
+            # Default: marzban-like, send subscription link
+            text = (
+                f"✅ کانفیگ تست رایگان شما با موفقیت ساخته شد!\n\n"
+                f"<b>حجم:</b> {trial_plan['traffic_gb']} گیگابایت\n"
+                f"<b>مدت اعتبار:</b> {trial_plan['duration_days']} روز\n\n"
+                f"لینک کانفیگ شما:\n<code>{config_link}</code>\n\n"
+                f"<b>آموزش اتصال :</b>\n"
+                f"https://t.me/madeingod_tm"
+            )
+            await query.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]]),
+            )
     else:
         # If message is empty, give a generic hint
         reason = message or "اطلاعات کافی از پنل دریافت نشد."
