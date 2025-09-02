@@ -69,6 +69,7 @@ class MarzbanAPI(BasePanelAPI):
         headers = {'Authorization': f'Bearer {self.access_token}', 'accept': 'application/json'}
         endpoints = [
             f"{self.base_url}/api/inbounds",
+            f"{self.base_url}/api/inbounds?page=1&size=100",
             f"{self.base_url}/api/inbound",
             f"{self.base_url}/inbounds",
             f"{self.base_url}/api/config",
@@ -76,13 +77,25 @@ class MarzbanAPI(BasePanelAPI):
         last_error = None
         for url in endpoints:
             try:
+                try:
+                    logger.info(f"Marzban list_inbounds -> GET {url}")
+                except Exception:
+                    pass
                 r = self.session.get(url, headers=headers, timeout=12)
                 if r.status_code != 200:
+                    try:
+                        logger.error(f"Marzban list_inbounds <- {r.status_code} @ {url} ct={r.headers.get('content-type','')} preview={(r.text or '')[:200]!r}")
+                    except Exception:
+                        pass
                     last_error = f"HTTP {r.status_code} @ {url}"
                     continue
                 try:
                     data = r.json()
                 except ValueError:
+                    try:
+                        logger.error(f"Marzban list_inbounds JSON parse error @ {url} preview={(r.text or '')[:200]!r}")
+                    except Exception:
+                        pass
                     last_error = f"non-JSON response @ {url}"
                     continue
                 # Common shapes: {'inbounds': [...] } or list
@@ -92,6 +105,10 @@ class MarzbanAPI(BasePanelAPI):
                         items = data.get('inbounds')
                     elif isinstance(data.get('obj'), list):
                         items = data.get('obj')
+                    elif isinstance(data.get('items'), list):
+                        items = data.get('items')
+                    elif isinstance((data.get('result') or {}).get('inbounds'), list):
+                        items = (data.get('result') or {}).get('inbounds')
                 if items is None and isinstance(data, list):
                     items = data
                 if not isinstance(items, list):
@@ -112,6 +129,10 @@ class MarzbanAPI(BasePanelAPI):
                         'port': it.get('port') or 0,
                         'tag': it.get('tag') or it.get('remark') or str(it.get('id') or ''),
                     })
+                try:
+                    logger.info(f"Marzban list_inbounds <- OK {len(inbounds)} items from {url}")
+                except Exception:
+                    pass
                 return inbounds, "Success"
             except requests.RequestException as e:
                 last_error = str(e)
