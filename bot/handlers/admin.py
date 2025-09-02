@@ -528,19 +528,28 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
         execute_db("UPDATE discount_codes SET times_used = times_used + 1 WHERE code = ?", (order['discount_code'],))
 
     inbound_detail = getattr(api, '_fetch_inbound_detail', lambda _id: None)(int(inbound_id))
-    configs = []
+    built_confs = []
     if inbound_detail:
         try:
-            configs = _build_configs_from_inbound(inbound_detail, username, panel_row) or []
+            built_confs = _build_configs_from_inbound(inbound_detail, username, panel_row) or []
         except Exception:
-            configs = []
-    if not configs:
-        configs = _fetch_subscription_configs(sub_link)
+            built_confs = []
+    # If none, try decoding subscription
+    if not built_confs:
+        built_confs = _fetch_subscription_configs(sub_link)
+    # As an extra attempt (but still ensure single output), try API helper only if still empty
+    api_confs = []
+    if not built_confs and hasattr(api, 'get_configs_for_user_on_inbound'):
+        try:
+            api_confs = api.get_configs_for_user_on_inbound(int(inbound_id), username) or []
+        except Exception:
+            api_confs = []
+    display_confs = built_confs or api_confs
+
     footer = ((query_db("SELECT value FROM settings WHERE key = 'config_footer_text'", one=True) or {}).get('value') or '')
     ptype_lower = (panel_row.get('panel_type') or '').lower()
-    if configs:
-        # Limit to first few entries to keep message concise
-        preview = configs[:5]
+    if display_confs:
+        preview = display_confs[:1]  # send only the first config
         configs_text = "\n".join(preview)
         user_message = (
             f"✅ سفارش شما تایید شد!\n\n"
@@ -548,7 +557,6 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
             f"<b>کانفیگ شما:</b>\n<code>{configs_text}</code>\n\n" + footer
         )
     else:
-        # For TX-UI: do NOT send sub link fallback
         if ptype_lower in ('txui','tx-ui','tx ui'):
             user_message = (
                 f"✅ سفارش شما تایید شد!\n\n"
@@ -557,26 +565,13 @@ async def admin_xui_choose_inbound(update: Update, context: ContextTypes.DEFAULT
                 f"\n\n" + footer
             )
         else:
-            # Fallback: send sub link for other panel types
             user_message = (
                 f"✅ سفارش شما تایید شد!\n\n"
                 f"<b>پلن:</b> {plan['name']}\n"
                 f"<b>لینک اشتراک:</b>\n<code>{sub_link}</code>\n\n" + footer
             )
     try:
-        sent = False
-        if (panel_row.get('panel_type') or '').lower() in ('3xui','3x-ui','3x ui','xui','x-ui','sanaei','alireza') and hasattr(api, 'get_configs_for_user_on_inbound'):
-            try:
-                confs = api.get_configs_for_user_on_inbound(inbound_id, username)
-                if confs:
-                    text_cfg = "\n".join(f"<code>{c}</code>" for c in confs[:5])
-                    full_message = user_message + "\n\n" + text_cfg
-                    await context.bot.send_message(order['user_id'], full_message, parse_mode=ParseMode.HTML)
-                    sent = True
-            except Exception:
-                sent = False
-        if not sent:
-            await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
+        await context.bot.send_message(order['user_id'], user_message, parse_mode=ParseMode.HTML)
         # Exit selection mode: clear pending and collapse keyboard
         context.user_data.pop('pending_xui', None)
         ok_text = base_text + f"\n\n\u2705 **ارسال با موفقیت انجام شد.**"
