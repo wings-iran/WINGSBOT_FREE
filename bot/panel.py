@@ -26,7 +26,10 @@ class BasePanelAPI:
 class MarzbanAPI(BasePanelAPI):
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
-        self.base_url = panel_row['url'].rstrip('/')
+        _raw = (panel_row['url'] or '').strip().rstrip('/')
+        if _raw and '://' not in _raw:
+            _raw = f"http://{_raw}"
+        self.base_url = _raw
         self.username = panel_row['username']
         self.password = panel_row['password']
         self.session = requests.Session()
@@ -319,10 +322,16 @@ class XuiAPI(BasePanelAPI):
 
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
-        self.base_url = panel_row['url'].rstrip('/')
+        _raw = (panel_row['url'] or '').strip().rstrip('/')
+        if _raw and '://' not in _raw:
+            _raw = f"http://{_raw}"
+        self.base_url = _raw
         self.username = panel_row['username']
         self.password = panel_row['password']
-        self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        _sb = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        if _sb and '://' not in _sb:
+            _sb = f"http://{_sb}"
+        self.sub_base = _sb
         self.session = requests.Session()
         self._json_headers = {
             'Accept': 'application/json',
@@ -1314,10 +1323,16 @@ class ThreeXuiAPI(BasePanelAPI):
 
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
-        self.base_url = panel_row['url'].rstrip('/')
+        _raw = (panel_row['url'] or '').strip().rstrip('/')
+        if _raw and '://' not in _raw:
+            _raw = f"http://{_raw}"
+        self.base_url = _raw
         self.username = panel_row['username']
         self.password = panel_row['password']
-        self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        _sb = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        if _sb and '://' not in _sb:
+            _sb = f"http://{_sb}"
+        self.sub_base = _sb
         self.session = requests.Session()
         self._json_headers = {
             'Accept': 'application/json',
@@ -2140,10 +2155,16 @@ class TxUiAPI(BasePanelAPI):
 
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
-        self.base_url = panel_row['url'].rstrip('/')
+        _raw = (panel_row['url'] or '').strip().rstrip('/')
+        if _raw and '://' not in _raw:
+            _raw = f"http://{_raw}"
+        self.base_url = _raw
         self.username = panel_row['username']
         self.password = panel_row['password']
-        self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        _sb = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        if _sb and '://' not in _sb:
+            _sb = f"http://{_sb}"
+        self.sub_base = _sb
         self.session = requests.Session()
         self._json_headers = {
             'Accept': 'application/json',
@@ -2768,13 +2789,19 @@ class MarzneshinAPI(BasePanelAPI):
 
     def __init__(self, panel_row):
         self.panel_id = panel_row['id']
-        self.base_url = panel_row['url'].rstrip('/')
+        _raw = (panel_row['url'] or '').strip().rstrip('/')
+        if _raw and '://' not in _raw:
+            _raw = f"http://{_raw}"
+        self.base_url = _raw
         # Some deployments may serve under /app, but official docs use root /api
         self.api_base = self.base_url
         self.username = panel_row.get('username')
         self.password = panel_row.get('password')
         self.token = (panel_row.get('token') or '').strip()
-        self.sub_base = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        _sb = (panel_row.get('sub_base') or '').strip().rstrip('/') if isinstance(panel_row, dict) else ''
+        if _sb and '://' not in _sb:
+            _sb = f"http://{_sb}"
+        self.sub_base = _sb
         self.session = requests.Session()
         self._json_headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
         self._last_token_error = None

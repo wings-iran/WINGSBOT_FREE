@@ -144,6 +144,9 @@ def _infer_origin_host(panel_row: dict) -> str:
         base = (panel_row.get('sub_base') or panel_row.get('url') or '').strip()
         if not base:
             return ''
+        # If scheme-less, prepend http:// to allow urlsplit to parse host for IPs/domains
+        if '://' not in base:
+            base = f"http://{base}"
         parts = urlsplit(base)
         return parts.hostname or ''
     except Exception:
