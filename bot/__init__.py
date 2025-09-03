@@ -6,6 +6,7 @@ __all__ = [
     "handlers",
     "jobs",
     "app",
+    "run",
 ]
 
 __version__ = "1.0.0"
