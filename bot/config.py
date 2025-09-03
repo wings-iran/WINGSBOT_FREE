@@ -42,10 +42,26 @@ _load_env_file()
 # --- Basic Settings (env-overridable) ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_ID = _safe_int(os.getenv("ADMIN_ID", "0"), 0)
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "")
-# CHANNEL_ID can be numeric or @username. Keep raw and also provide int fallback.
-RAW_CHANNEL_ID = os.getenv("CHANNEL_ID", "")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "").strip()
+# CHANNEL_ID can be numeric or @username. Keep raw and also provide unified CHAT identifier.
+RAW_CHANNEL_ID = (os.getenv("CHANNEL_ID", "") or "").strip()
 CHANNEL_ID = _safe_int(RAW_CHANNEL_ID, 0)
+
+def _unify_chat_identifier(raw_id: str, username: str):
+    raw_id = (raw_id or '').strip()
+    username = (username or '').strip()
+    if raw_id:
+        if raw_id.startswith('@'):
+            return raw_id
+        i = _safe_int(raw_id, None)  # may be -100... or positive
+        if i is not None and i != 0:
+            return i
+    if username:
+        return username if username.startswith('@') else f"@{username}"
+    return None
+
+# Prefer CHANNEL_ID if provided, otherwise CHANNEL_USERNAME
+CHANNEL_CHAT = _unify_chat_identifier(RAW_CHANNEL_ID, CHANNEL_USERNAME)
 DB_NAME = os.getenv("DB_NAME", "bot.db")
 NOBITEX_TOKEN = os.getenv("NOBITEX_TOKEN", "")
 
