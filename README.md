@@ -23,8 +23,7 @@ bash install.sh
 4) اجرای ربات:
 
 ```bash
-source .venv/bin/activate
-python main.py
+source .venv/bin/activate && python -m bot.run
 ```
 
 5) اجرای دائمی (اختیاری): فایل wingsbot.service ساخته می‌شود. می‌توانید آن را به systemd بدهید:
