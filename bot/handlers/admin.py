@@ -2792,6 +2792,10 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
     if not _is_admin(update.effective_user.id):
         return ConversationHandler.END
     awaiting = context.user_data.get('awaiting_admin')
+    # Hard-guard: if admin is in the middle of adding/editing a panel, do not intercept text
+    # The panel add flow stores interim data in 'new_panel'
+    if context.user_data.get('new_panel'):
+        return ConversationHandler.END
     try:
         from ..config import logger as _lg
         _lg.debug(f"admin_wallet_adjust_text_router: awaiting={awaiting} text={(update.message.text or '')[:50]}")
