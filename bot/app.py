@@ -223,7 +223,8 @@ def build_application() -> Application:
     application.add_handler(TypeHandler(Update, force_join_checker), group=-1)
     # Early debug logger for text messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, debug_text_logger), group=-1)
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, master_message_handler), group=0)
+    # Route master text handler AFTER conversations so stateful flows (e.g., add panel URL/user/pass) capture inputs first
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, master_message_handler), group=2)
 
     admin_conv = ConversationHandler(
         entry_points=[CommandHandler('admin', admin_command)],

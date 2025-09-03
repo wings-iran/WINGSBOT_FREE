@@ -63,6 +63,16 @@ async def admin_panel_delete(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def admin_panel_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Clear any conflicting flags from other flows to avoid misrouting inputs
+    for key in [
+        'awaiting', 'awaiting_admin', 'awaiting_ticket', 'next_action', 'action_data',
+        'reseller_delete', 'wallet_adjust_direction', 'wallet_adjust_user', 'wallet_adjust_prompt_msg',
+        'ticket_reply_id', 'tutorial_edit_id', 'admin_add_prompt_msg_id'
+    ]:
+        try:
+            context.user_data.pop(key, None)
+        except Exception:
+            pass
     context.user_data['new_panel'] = {}
     await _safe_edit_text(update.callback_query.message, "نام پنل را وارد کنید (مثال: پنل آلمان):")
     return ADMIN_PANEL_AWAIT_NAME
