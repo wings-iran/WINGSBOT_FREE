@@ -1,6 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+import re
 
 from ..db import query_db, execute_db
 from ..states import (
@@ -92,30 +93,44 @@ async def admin_panel_receive_type(update: Update, context: ContextTypes.DEFAULT
         'marzneshin': 'marzneshin',
     }
     context.user_data['new_panel']['type'] = mapping.get(p_type, 'xui')
-    await _safe_edit_text(query.message, "آدرس کامل (URL) پنل را وارد کنید (مثال: https://panel.example.com):")
+    await _safe_edit_text(
+        query.message,
+        "آدرس کامل (URL) پنل را وارد کنید\n"
+        "- مثال: http://1.2.3.4:2053 یا https://panel.example.com\n"
+        "- اگر http/https ننویسید، به‌صورت خودکار http اضافه می‌شود",
+    )
     return ADMIN_PANEL_AWAIT_URL
 
 
 async def admin_panel_receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['new_panel']['url'] = update.message.text
+    raw_url = (update.message.text or '').strip().rstrip('/')
+    if raw_url and not re.match(r'^[a-zA-Z][a-zA-Z0-9+\.-]*://', raw_url):
+        raw_url = f"http://{raw_url}"
+    context.user_data['new_panel']['url'] = raw_url
     ptype = context.user_data['new_panel'].get('type')
     if ptype in ('xui', '3xui', 'txui'):
-        example = "مثال: http://example.com:2096 یا https://vpn.example.com:8443/app"
+        example = "مثال: http://1.2.3.4:2096 یا http://example.com:2096 یا https://vpn.example.com:8443/app"
         await update.message.reply_text(
             "آدرس پایه ساب‌ لینک (subscription base) را وارد کنید.\n"
             "- می‌تواند دامنه/پورت متفاوت با URL ورود داشته باشد.\n"
             "- اگر مسیر (path) دارد، همان را هم وارد کنید.\n"
             f"{example}\n\n"
+            "نکته: اگر http/https ننویسید، به‌صورت خودکار http اضافه می‌شود.\n"
             "نکته: ربات به‌صورت خودکار /sub/{subId} یا /sub/{subId}?name={subId} را با توجه به نوع پنل اضافه می‌کند.")
         return ADMIN_PANEL_AWAIT_SUB_BASE
     # For Marzneshin, do NOT ask for API token here. We will auto-fetch token using username/password.
     # Proceed to ask for admin username directly.
-    await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
+    await update.message.reply_text(
+        "نام کاربری (username) ادمین پنل را وارد کنید:\n"
+        "- URL و sub base اکنون می‌توانند http و آی‌پی باشند."
+    )
     return ADMIN_PANEL_AWAIT_USER
 
 
 async def admin_panel_receive_sub_base(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    sub_base = update.message.text.strip().rstrip('/')
+    sub_base = (update.message.text or '').strip().rstrip('/')
+    if sub_base and not re.match(r'^[a-zA-Z][a-zA-Z0-9+\.-]*://', sub_base):
+        sub_base = f"http://{sub_base}"
     context.user_data['new_panel']['sub_base'] = sub_base
     await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
     return ADMIN_PANEL_AWAIT_USER
