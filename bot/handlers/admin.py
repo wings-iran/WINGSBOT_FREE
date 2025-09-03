@@ -2910,8 +2910,9 @@ async def admin_wallet_adjust_text_router(update: Update, context: ContextTypes.
         context.user_data.pop('wallet_adjust_direction', None)
         await admin_wallet_tx_menu(update, context)
         raise ApplicationHandlerStop
-    # Fallback: if not awaiting but admin sends "id amount", treat as credit
-    if re.findall(r"\d+", text) and len(re.findall(r"\d+", text)) >= 2:
+    # Fallback: allow quick "USER_ID AMOUNT" only if the message strictly matches two numbers separated by space
+    # This avoids catching unrelated inputs like URLs/IPs that contain multiple numbers
+    if (not awaiting) and re.match(r"^\s*\d+\s+\d+\s*$", text):
         try:
             nums = re.findall(r"\d+", text)
             uid = int(nums[0])
