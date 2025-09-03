@@ -1863,6 +1863,7 @@ async def admin_panel_receive_url(update: Update, context: ContextTypes.DEFAULT_
             f"{example}\n\n"
             "نکته: ربات به‌صورت خودکار /sub/{subId} یا /sub/{subId}?name={subId} را با توجه به نوع پنل اضافه می‌کند.")
         return ADMIN_PANEL_AWAIT_SUB_BASE
+    # For Marzneshin, do NOT ask for API token. We will obtain it automatically via username/password.
     await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
     return ADMIN_PANEL_AWAIT_USER
 
@@ -1905,9 +1906,7 @@ async def admin_panel_receive_token(update: Update, context: ContextTypes.DEFAUL
 async def admin_panel_receive_sub_base(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     sub_base = update.message.text.strip().rstrip('/')
     context.user_data['new_panel']['sub_base'] = sub_base
-    if context.user_data['new_panel'].get('type') == 'sui':
-        await update.message.reply_text("توکن API پنل S-UI را وارد کنید (Header: Token):")
-        return ADMIN_PANEL_AWAIT_TOKEN
+    # For Marzneshin/S-UI-like panels we skip token prompt and rely on automatic token retrieval.
     await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
     return ADMIN_PANEL_AWAIT_USER
 
