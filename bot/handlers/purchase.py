@@ -84,15 +84,17 @@ async def show_plan_confirmation(update: Update, context: ContextTypes.DEFAULT_T
 
     context.user_data['selected_plan_id'] = plan_id
     context.user_data['original_price'] = plan['price']
-    # Apply reseller discount if any and within cap
+    # Apply reseller discount if any and within cap (or unlimited cap when max_purchases == 0)
     uid = query.from_user.id
     reseller = query_db("SELECT discount_percent, expires_at, max_purchases, used_purchases, status FROM resellers WHERE user_id = ?", (uid,), one=True) or {}
     r_percent = 0
     try:
         if reseller:
             from datetime import datetime as _dt
-            active = (reseller.get('status') == 'active') and (not reseller.get('expires_at') or _dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") >= _dt.now())
-            within_cap = int(reseller.get('used_purchases') or 0) < int(reseller.get('max_purchases') or 0)
+            active = (str(reseller.get('status') or '').lower() == 'active') and (not reseller.get('expires_at') or _dt.strptime(reseller['expires_at'], "%Y-%m-%d %H:%M:%S") >= _dt.now())
+            max_pur = int(reseller.get('max_purchases') or 0)
+            used_pur = int(reseller.get('used_purchases') or 0)
+            within_cap = (max_pur == 0) or (used_pur < max_pur)
             if active and within_cap:
                 r_percent = int((reseller.get('discount_percent') or 0) or 0)
     except Exception:
@@ -102,13 +104,20 @@ async def show_plan_confirmation(update: Update, context: ContextTypes.DEFAULT_T
 
     traffic_display = "نامحدود" if float(plan['traffic_gb']) == 0 else f"{plan['traffic_gb']} گیگابایت"
 
+    # Show price with reseller discount if applicable
+    if r_percent > 0:
+        discounted = int(plan['price'] * (100 - r_percent) / 100)
+        price_line = f"**قیمت:** ~{plan['price']:,}~  {discounted:,} تومان (تخفیف {r_percent}%)"
+    else:
+        price_line = f"**قیمت:** {plan['price']:,} تومان"
+
     text = (
         f"شما پلن زیر را انتخاب کرده‌اید:\n\n"
         f"**نام پلن:** {plan['name']}\n"
         f"**توضیحات:** {plan['description']}\n"
         f"**مدت زمان:** {plan['duration_days']} روز\n"
         f"**حجم:** {traffic_display}\n"
-        f"**قیمت:** {plan['price']:,} تومان\n\n"
+        f"{price_line}\n\n"
         f"آیا تایید می‌کنید؟"
     )
     keyboard = [
