@@ -3093,6 +3093,52 @@ class MarzneshinAPI(BasePanelAPI):
             logger.error(f"Marzneshin create_user_on_inbound error: {e}")
             return None, None, str(e)
 
+    async def create_user(self, user_id, plan):
+        """Create a user via Marzneshin API and return subscription link only.
+
+        Returns: (username, subscription_url, message)
+        """
+        # Ensure we have a token
+        if not self.token and not self._ensure_token():
+            detail = (self._last_token_error or "نامشخص")
+            return None, None, f"توکن دریافت نشد: {detail}"
+        try:
+            # Build minimal payload; Marzneshin /api/users accepts username + optional expire/data_limit
+            new_username = f"user_{user_id}_{uuid.uuid4().hex[:6]}"
+            payload_user = {"username": new_username}
+            try:
+                days = int(plan['duration_days'])
+            except Exception:
+                days = 0
+            if days > 0:
+                payload_user["expire"] = days
+            try:
+                tgb = float(plan['traffic_gb'])
+            except Exception:
+                tgb = 0.0
+            if tgb > 0:
+                if tgb >= 1 and abs(tgb - round(tgb)) < 1e-6:
+                    payload_user["data_limit"] = f"{int(round(tgb))}GB"
+                elif tgb >= 1:
+                    payload_user["data_limit"] = f"{tgb}GB"
+                else:
+                    payload_user["data_limit"] = f"{int(round(tgb * 1024))}MB"
+            hdrs = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+            ru = self.session.post(f"{self.base_url}/api/users", headers=hdrs, json=payload_user, timeout=15)
+            if ru.status_code not in (200, 201):
+                return None, None, f"HTTP {ru.status_code} @ /api/users: {(ru.text or '')[:200]}"
+            # Fetch user info to get subscription_url
+            user_info, _ = await self.get_user(new_username)
+            sub_link = None
+            if isinstance(user_info, dict):
+                sub_link = user_info.get('subscription_url') or user_info.get('subscription') or None
+            # Normalize absolute URL
+            if isinstance(sub_link, str) and sub_link and not sub_link.startswith('http'):
+                sub_link = f"{self.base_url}{sub_link}"
+            return new_username, sub_link, "Success"
+        except requests.RequestException as e:
+            return None, None, str(e)
+
     async def get_user(self, username):
         # Marzneshin: use /api/users/{username} for core info and /sub/{username}/{key}/info|usage for stats
         # 1) Ensure token and get user
