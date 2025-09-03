@@ -108,9 +108,8 @@ async def admin_panel_receive_url(update: Update, context: ContextTypes.DEFAULT_
             f"{example}\n\n"
             "نکته: ربات به‌صورت خودکار /sub/{subId} یا /sub/{subId}?name={subId} را با توجه به نوع پنل اضافه می‌کند.")
         return ADMIN_PANEL_AWAIT_SUB_BASE
-    if ptype == 'marzneshin':
-        await update.message.reply_text("توکن API مرزنشین را وارد کنید (اختیاری؛ در صورت خالی بودن از ورود کوکی استفاده می‌شود):")
-        return ADMIN_PANEL_AWAIT_TOKEN
+    # For Marzneshin, do NOT ask for API token here. We will auto-fetch token using username/password.
+    # Proceed to ask for admin username directly.
     await update.message.reply_text("نام کاربری (username) ادمین پنل را وارد کنید:")
     return ADMIN_PANEL_AWAIT_USER
 
