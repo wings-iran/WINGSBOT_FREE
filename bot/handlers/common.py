@@ -39,23 +39,46 @@ async def force_join_checker(update: Update, context: ContextTypes.DEFAULT_TYPE)
 	if ud.get('awaiting') or ud.get('awaiting_admin') or ud.get('awaiting_ticket') or get_flow(context):
 		logger.debug(f"force_join_checker: skip join check for user {user.id} due to active flow flags: {list(k for k,v in ud.items() if v)}")
 		return
+	from ..config import CHANNEL_CHAT as _CHAT
+	chat_id = _CHAT if _CHAT is not None else (CHANNEL_ID or CHANNEL_USERNAME)
 	try:
-		from ..config import CHANNEL_CHAT as _CHAT
-		chat_id = _CHAT if _CHAT is not None else (CHANNEL_ID or CHANNEL_USERNAME)
 		member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user.id)
 		if member.status in ['member', 'administrator', 'creator']:
 			return
 	except TelegramError as e:
+		# If we cannot verify, keep user blocked and show join info instead of allowing silently
 		logger.warning(f"Could not check channel membership for {user.id}: {e}")
-		return
 
-	join_url = f"https://t.me/{(CHANNEL_USERNAME or '').replace('@', '')}" if (CHANNEL_USERNAME or '').strip() else None
+	# Build a visible channel hint and a reliable join link if possible
+	join_url = None
+	channel_hint = ""
+	try:
+		chat_obj = await context.bot.get_chat(chat_id=chat_id)
+		uname = getattr(chat_obj, 'username', None)
+		inv = getattr(chat_obj, 'invite_link', None)
+		if uname:
+			handle = f"@{str(uname).replace('@','')}"
+			join_url = f"https://t.me/{str(uname).replace('@','')}"
+			channel_hint = f"\n\nکانال: {handle}"
+		elif inv:
+			join_url = inv
+			channel_hint = "\n\nلینک دعوت کانال در دکمه زیر موجود است."
+	except Exception:
+		if (CHANNEL_USERNAME or '').strip():
+			handle = (CHANNEL_USERNAME or '').strip()
+			if not handle.startswith('@'):
+				handle = f"@{handle}"
+			join_url = f"https://t.me/{handle.replace('@','')}"
+			channel_hint = f"\n\nکانال: {handle}"
+		elif CHANNEL_ID:
+			channel_hint = f"\n\nشناسه کانال: `{CHANNEL_ID}`"
+
 	keyboard = []
 	if join_url:
 		keyboard.append([InlineKeyboardButton("\U0001F195 عضویت در کانال", url=join_url)])
 	keyboard.append([InlineKeyboardButton("\u2705 عضو شدم", callback_data="check_join")])
 	text = (
-		f"\u26A0\uFE0F **قفل عضویت**\n\nبرای استفاده از ربات، ابتدا در کانال ما عضو شوید و سپس دکمه «عضو شدم» را بزنید."
+		f"\u26A0\uFE0F **قفل عضویت**\n\nبرای استفاده از ربات، ابتدا در کانال ما عضو شوید و سپس دکمه «عضو شدم» را بزنید." + channel_hint
 	)
 	logger.info(f"force_join_checker: blocking user {user.id} with join gate")
 	if update.callback_query:
