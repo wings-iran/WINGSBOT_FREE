@@ -331,23 +331,7 @@ async def send_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not _is_admin(update.effective_user.id):
         return ConversationHandler.END
-    # Delete triggering message/callback to keep chat clean
-    try:
-        if update.callback_query and update.callback_query.message:
-            await update.callback_query.answer()
-            try:
-                await context.bot.delete_message(chat_id=update.callback_query.message.chat_id, message_id=update.callback_query.message.message_id)
-            except Exception:
-                pass
-        elif update.message:
-            try:
-                await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # Send only the requested notification
+    # Optional channel notice
     try:
         chat_id = update.effective_chat.id if update.effective_chat else (update.callback_query.message.chat_id if update.callback_query and update.callback_query.message else None)
         if chat_id is not None:
@@ -355,8 +339,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     except Exception:
         pass
 
-    # End admin flow to avoid sending any other admin messages
-    return ConversationHandler.END
+    # Show admin menu
+    return await send_admin_panel(update, context)
 
 
 # --- Order Review / Approval ---
