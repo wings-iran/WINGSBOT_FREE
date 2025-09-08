@@ -331,23 +331,32 @@ async def send_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not _is_admin(update.effective_user.id):
         return ConversationHandler.END
+    # Delete triggering message/callback to keep chat clean
     try:
-        notice = (
-            "این ربات نسخه عادی است و برخی قابلیت‌ها قفل هستند.\n"
-            "برای دریافت نسخه ویژه به ربات زیر مراجعه کنید:\n"
-            "@wingscrbot\n\n"
-            "پشتیبانی: @wings_sup"
-        )
-        if update.callback_query:
+        if update.callback_query and update.callback_query.message:
             await update.callback_query.answer()
-            await update.callback_query.message.reply_text(notice)
-            await update.callback_query.message.reply_text("ادمین عزیز برای دریافت اطلاعیه ها و اپدیت ها حتما داخل کانال عضو شید\n@wingsbotcr")
+            try:
+                await context.bot.delete_message(chat_id=update.callback_query.message.chat_id, message_id=update.callback_query.message.message_id)
+            except Exception:
+                pass
         elif update.message:
-            await update.message.reply_text(notice)
-            await update.message.reply_text("ادمین عزیز برای دریافت اطلاعیه ها و اپدیت ها حتما داخل کانال عضو شید\n@wingsbotcr")
+            try:
+                await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
+            except Exception:
+                pass
     except Exception:
         pass
-    return await send_admin_panel(update, context)
+
+    # Send only the requested notification
+    try:
+        chat_id = update.effective_chat.id if update.effective_chat else (update.callback_query.message.chat_id if update.callback_query and update.callback_query.message else None)
+        if chat_id is not None:
+            await context.bot.send_message(chat_id=chat_id, text="کانال اطلاع رسانی\n@wingsbotcr")
+    except Exception:
+        pass
+
+    # End admin flow to avoid sending any other admin messages
+    return ConversationHandler.END
 
 
 # --- Order Review / Approval ---

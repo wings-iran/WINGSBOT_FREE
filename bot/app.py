@@ -477,6 +477,70 @@ def build_application() -> Application:
 
 
     async def check_join_and_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Verify membership before proceeding
+        from .config import CHANNEL_ID as _CID, CHANNEL_USERNAME as _CUN, logger as _logger
+        try:
+            from .config import CHANNEL_CHAT as _CHAT
+        except Exception:
+            _CHAT = None
+        chat_id = _CHAT if _CHAT is not None else (_CID or _CUN)
+        is_member = False
+        try:
+            member = await context.bot.get_chat_member(chat_id=chat_id, user_id=update.effective_user.id)
+            if getattr(member, 'status', None) in ['member', 'administrator', 'creator']:
+                is_member = True
+        except Exception as e:
+            # If cannot verify, treat as not joined to avoid bypass
+            try:
+                _logger.warning(f"check_join_and_start: membership check failed for {update.effective_user.id}: {e}")
+            except Exception:
+                pass
+            is_member = False
+
+        if not is_member:
+            # Rebuild join gate UI
+            join_url = None
+            channel_hint = ""
+            try:
+                chat_obj = await context.bot.get_chat(chat_id=chat_id)
+                uname = getattr(chat_obj, 'username', None)
+                inv = getattr(chat_obj, 'invite_link', None)
+                if uname:
+                    handle = f"@{str(uname).replace('@','')}"
+                    join_url = f"https://t.me/{str(uname).replace('@','')}"
+                    channel_hint = f"\n\nکانال: {handle}"
+                elif inv:
+                    join_url = inv
+                    channel_hint = "\n\nلینک دعوت کانال در دکمه زیر موجود است."
+            except Exception:
+                if (_CUN or '').strip():
+                    handle = (_CUN or '').strip()
+                    if not handle.startswith('@'):
+                        handle = f"@{handle}"
+                    join_url = f"https://t.me/{handle.replace('@','')}"
+                    channel_hint = f"\n\nکانال: {handle}"
+                elif _CID:
+                    channel_hint = f"\n\nشناسه کانال: `{_CID}`"
+
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            from telegram.constants import ParseMode
+            kb = []
+            if join_url:
+                kb.append([InlineKeyboardButton("\U0001F195 عضویت در کانال", url=join_url)])
+            kb.append([InlineKeyboardButton("\u2705 عضو شدم", callback_data='check_join')])
+            text = (
+                f"\u26A0\uFE0F **قفل عضویت**\n\nبرای استفاده از ربات، ابتدا در کانال ما عضو شوید و سپس دکمه «عضو شدم» را بزنید." + channel_hint
+            )
+            try:
+                if update.callback_query and update.callback_query.message:
+                    await update.callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+                    await update.callback_query.answer("ابتدا عضو کانال شوید و دوباره تلاش کنید.", show_alert=True)
+                else:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                pass
+            return
+
         await register_new_user(update.effective_user, update, referrer_hint=context.user_data.get('referrer_id'))
         await start_command(update, context)
 
