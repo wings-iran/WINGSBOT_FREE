@@ -187,6 +187,91 @@ from .handlers.admin_premium_stub import (
     admin_run_reminder_check as premium_admin_run_reminder_check,
 )
 
+from .premium import IS_FREE_BUILD
+
+# Premium-gating: rebind selected handlers to stubs in free builds
+from .handlers.user_stub import (
+    wallet_menu as _wallet_menu_stub,
+    wallet_topup_gateway_start as _wallet_topup_gateway_start_stub,
+    wallet_topup_card_start as _wallet_topup_card_start_stub,
+    wallet_topup_crypto_start as _wallet_topup_crypto_start_stub,
+    wallet_select_amount as _wallet_select_amount_stub,
+    wallet_upload_start_card as _wallet_upload_start_card_stub,
+    wallet_upload_start_crypto as _wallet_upload_start_crypto_stub,
+    wallet_verify_gateway as _wallet_verify_gateway_stub,
+    wallet_upload_router as _wallet_upload_router_stub,
+)
+from .handlers.purchase_stub import (
+    start_purchase_flow as _start_purchase_flow_stub,
+    show_plan_confirmation as _show_plan_confirmation_stub,
+    apply_discount_start as _apply_discount_start_stub,
+    receive_and_validate_discount_code as _receive_and_validate_discount_code_stub,
+    show_payment_info as _show_payment_info_stub,
+    show_payment_method_selection as _show_payment_method_selection_stub,
+    show_payment_info_card as _show_payment_info_card_stub,
+    show_payment_info_crypto as _show_payment_info_crypto_stub,
+    show_payment_info_gateway as _show_payment_info_gateway_stub,
+    receive_payment_screenshot as _receive_payment_screenshot_stub,
+    gateway_verify_purchase as _gateway_verify_purchase_stub,
+    gateway_verify_renewal as _gateway_verify_renewal_stub,
+    cancel_and_start_purchase as _cancel_and_start_purchase_stub,
+    pay_method_wallet as _pay_method_wallet_stub,
+)
+from .handlers.renewal_stub import (
+    start_renewal_flow as _start_renewal_flow_stub,
+    show_renewal_plan_confirmation as _show_renewal_plan_confirmation_stub,
+    renew_apply_discount_start as _renew_apply_discount_start_stub,
+    receive_renewal_payment as _receive_renewal_payment_stub,
+)
+from .handlers.broadcast_premium_stub import (
+    admin_broadcast_menu as _admin_broadcast_menu_stub,
+    admin_broadcast_ask_message as _admin_broadcast_ask_message_stub,
+    admin_broadcast_execute as _admin_broadcast_execute_stub,
+)
+from .handlers.admin_premium_stub import (
+    backup_start as _backup_start_stub,
+    admin_generate_backup as _admin_generate_backup_stub,
+    admin_add_command as _admin_add_command_stub,
+)
+
+wallet_menu = _wallet_menu_stub if IS_FREE_BUILD else wallet_menu
+wallet_topup_gateway_start = _wallet_topup_gateway_start_stub if IS_FREE_BUILD else wallet_topup_gateway_start
+wallet_topup_card_start = _wallet_topup_card_start_stub if IS_FREE_BUILD else wallet_topup_card_start
+wallet_topup_crypto_start = _wallet_topup_crypto_start_stub if IS_FREE_BUILD else wallet_topup_crypto_start
+wallet_select_amount = _wallet_select_amount_stub if IS_FREE_BUILD else wallet_select_amount
+wallet_upload_start_card = _wallet_upload_start_card_stub if IS_FREE_BUILD else wallet_upload_start_card
+wallet_upload_start_crypto = _wallet_upload_start_crypto_stub if IS_FREE_BUILD else wallet_upload_start_crypto
+wallet_verify_gateway = _wallet_verify_gateway_stub if IS_FREE_BUILD else wallet_verify_gateway
+wallet_upload_router = _wallet_upload_router_stub if IS_FREE_BUILD else wallet_upload_router
+
+start_purchase_flow = _start_purchase_flow_stub if IS_FREE_BUILD else start_purchase_flow
+show_plan_confirmation = _show_plan_confirmation_stub if IS_FREE_BUILD else show_plan_confirmation
+apply_discount_start = _apply_discount_start_stub if IS_FREE_BUILD else apply_discount_start
+receive_and_validate_discount_code = _receive_and_validate_discount_code_stub if IS_FREE_BUILD else receive_and_validate_discount_code
+show_payment_info = _show_payment_info_stub if IS_FREE_BUILD else show_payment_info
+show_payment_method_selection = _show_payment_method_selection_stub if IS_FREE_BUILD else show_payment_method_selection
+show_payment_info_card = _show_payment_info_card_stub if IS_FREE_BUILD else show_payment_info_card
+show_payment_info_crypto = _show_payment_info_crypto_stub if IS_FREE_BUILD else show_payment_info_crypto
+show_payment_info_gateway = _show_payment_info_gateway_stub if IS_FREE_BUILD else show_payment_info_gateway
+receive_payment_screenshot = _receive_payment_screenshot_stub if IS_FREE_BUILD else receive_payment_screenshot
+gateway_verify_purchase = _gateway_verify_purchase_stub if IS_FREE_BUILD else gateway_verify_purchase
+gateway_verify_renewal = _gateway_verify_renewal_stub if IS_FREE_BUILD else gateway_verify_renewal
+cancel_and_start_purchase = _cancel_and_start_purchase_stub if IS_FREE_BUILD else cancel_and_start_purchase
+pay_method_wallet = _pay_method_wallet_stub if IS_FREE_BUILD else pay_method_wallet
+
+start_renewal_flow = _start_renewal_flow_stub if IS_FREE_BUILD else start_renewal_flow
+show_renewal_plan_confirmation = _show_renewal_plan_confirmation_stub if IS_FREE_BUILD else show_renewal_plan_confirmation
+renew_apply_discount_start = _renew_apply_discount_start_stub if IS_FREE_BUILD else renew_apply_discount_start
+receive_renewal_payment = _receive_renewal_payment_stub if IS_FREE_BUILD else receive_renewal_payment
+
+admin_broadcast_menu = _admin_broadcast_menu_stub if IS_FREE_BUILD else admin_broadcast_menu
+admin_broadcast_ask_message = _admin_broadcast_ask_message_stub if IS_FREE_BUILD else admin_broadcast_ask_message
+admin_broadcast_execute = _admin_broadcast_execute_stub if IS_FREE_BUILD else admin_broadcast_execute
+
+backup_start = _backup_start_stub if IS_FREE_BUILD else backup_start
+admin_generate_backup = _admin_generate_backup_stub if IS_FREE_BUILD else admin_generate_backup
+admin_add_command = _admin_add_command_stub if IS_FREE_BUILD else admin_add_command
+
 
 async def debug_text_logger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
