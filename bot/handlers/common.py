@@ -182,14 +182,23 @@ async def send_dynamic_message(update: Update, context: ContextTypes.DEFAULT_TYP
 		if file_id or (query.message and (query.message.photo or query.message.video or query.message.document)):
 			await query.message.delete()
 			if file_id:
-				sender = getattr(context.bot, f"send_{file_type}")
-				await sender(
-					chat_id=query.message.chat_id,
-					file_id=file_id,
-					caption=text,
-					reply_markup=reply_markup,
-					parse_mode=ParseMode.MARKDOWN,
-				)
+				sender = getattr(context.bot, f"send_{file_type}", None)
+				if sender:
+					payload = {file_type: file_id}
+					await sender(
+						chat_id=query.message.chat_id,
+						**payload,
+						caption=text,
+						reply_markup=reply_markup,
+						parse_mode=ParseMode.MARKDOWN,
+					)
+				else:
+					await context.bot.send_message(
+						chat_id=query.message.chat_id,
+						text=text or '',
+						reply_markup=reply_markup,
+						parse_mode=ParseMode.MARKDOWN,
+					)
 			else:
 				await context.bot.send_message(
 					chat_id=query.message.chat_id,
