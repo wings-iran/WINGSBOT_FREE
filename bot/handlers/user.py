@@ -68,7 +68,20 @@ async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_
     user_id = query.from_user.id
 
     if query_db("SELECT 1 FROM free_trials WHERE user_id = ?", (user_id,), one=True):
-        await context.bot.answer_callback_query(query.id, "شما قبلاً کانفیگ تست خود را دریافت کرده‌اید.", show_alert=True)
+        try:
+            await query.message.edit_text(
+                "شما قبلاً تست را دریافت کرده‌اید.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]]),
+            )
+        except Exception:
+            try:
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text="شما قبلاً تست را دریافت کرده‌اید.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت به منو", callback_data='start_main')]])
+                )
+            except Exception:
+                pass
         return
 
     # Use admin-selected panel for free trials if set; fallback to first
