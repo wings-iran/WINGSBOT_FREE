@@ -153,6 +153,7 @@ from .handlers.admin_messages import (
     admin_messages_delete as admin_messages_delete,
 )
 from .handlers.admin import admin_panel_inbounds_refresh
+from .handlers.admin import admin_run_reminder_check as premium_admin_run_reminder_check
 from .handlers.admin_tickets import (
     admin_tickets_menu as admin_tickets_menu,
     admin_ticket_view,
@@ -182,9 +183,6 @@ from .handlers.admin_stats_broadcast import (
     admin_broadcast_menu as admin_broadcast_menu,
     admin_broadcast_ask_message as admin_broadcast_ask_message,
     admin_broadcast_execute as admin_broadcast_execute,
-)
-from .handlers.admin_premium_stub import (
-    admin_run_reminder_check as premium_admin_run_reminder_check,
 )
 
 
