@@ -565,8 +565,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(wallet_select_amount, pattern=r'^wallet_amt_'), group=3)
     application.add_handler(CallbackQueryHandler(wallet_upload_start_card, pattern=r'^wallet_upload_start_card$'), group=3)
     application.add_handler(CallbackQueryHandler(wallet_upload_start_crypto, pattern=r'^wallet_upload_start_crypto$'), group=3)
-    # Unified upload router handles both wallet and reseller
-    application.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.VIDEO | filters.AUDIO | filters.Document.ALL | filters.TEXT, composite_upload_router), group=2)
+    # Unified upload router handles both wallet and reseller (run early to avoid other catch-alls)
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.VIDEO | filters.AUDIO | filters.Document.ALL | filters.TEXT, composite_upload_router), group=0)
     application.add_handler(CallbackQueryHandler(wallet_verify_gateway, pattern=r'^wallet_verify_gateway$'), group=3)
 
     # Reseller flows
