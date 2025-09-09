@@ -41,7 +41,7 @@ from .handlers.admin import (
     process_send_by_id_get_message,
     admin_send_by_id_start,
     admin_admins_menu,
-    # admin_add_command,
+    admin_add_command,
     admin_del_command, admin_setms_command,
     admin_set_payment_text_start, admin_set_usd_rate_start_global,
     admin_wallet_tx_menu, admin_wallet_tx_view, admin_wallet_tx_approve, admin_wallet_tx_reject,
@@ -188,7 +188,6 @@ from .handlers.admin_premium_stub import (
     admin_toggle_signup_bonus as premium_admin_toggle_signup_bonus,
     admin_set_signup_bonus_amount_start as premium_admin_set_signup_bonus_amount_start,
     admin_set_signup_bonus_amount_save as premium_admin_set_signup_bonus_amount_save,
-    admin_add_command as premium_admin_add_command,
 )
 
 
@@ -462,7 +461,7 @@ def build_application() -> Application:
 
     # Route critical admin callbacks globally so buttons work from any state
     # application.add_handler(CallbackQueryHandler(admin_global_router, pattern=r'^admin_'), group=0)
-    application.add_handler(CommandHandler('addadmin', premium_admin_add_command), group=0)
+    application.add_handler(CommandHandler('addadmin', admin_add_command), group=0)
     application.add_handler(CommandHandler('deladmin', admin_del_command), group=0)
     application.add_handler(CommandHandler('setms', admin_setms_command), group=0)
 
