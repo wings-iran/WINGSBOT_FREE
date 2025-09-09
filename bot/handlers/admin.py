@@ -2695,7 +2695,14 @@ async def admin_wallet_tx_view(update: Update, context: ContextTypes.DEFAULT_TYP
                f"وضعیت: {r['status']}\n"
                f"تاریخ: {r['created_at']}")
     if r.get('screenshot_file_id'):
-        await context.bot.send_photo(chat_id=query.message.chat_id, photo=r['screenshot_file_id'], caption=caption)
+        try:
+            await context.bot.send_photo(chat_id=query.message.chat_id, photo=r['screenshot_file_id'], caption=caption)
+        except Exception:
+            # Fallback for non-photo uploads (documents, etc.)
+            try:
+                await context.bot.send_document(chat_id=query.message.chat_id, document=r['screenshot_file_id'], caption=caption)
+            except Exception:
+                await context.bot.send_message(chat_id=query.message.chat_id, text=caption, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_wallet_tx_menu")]]))
     else:
         await context.bot.send_message(chat_id=query.message.chat_id, text=caption, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_wallet_tx_menu")]]))
     return ADMIN_WALLET_MENU

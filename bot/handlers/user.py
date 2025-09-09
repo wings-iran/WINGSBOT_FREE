@@ -1377,6 +1377,15 @@ async def wallet_upload_router(update: Update, context: ContextTypes.DEFAULT_TYP
     elif update.message.document:
         file_id = update.message.document.file_id
         sent_as = 'document'
+    elif getattr(update.message, 'video', None):
+        file_id = update.message.video.file_id
+        sent_as = 'video'
+    elif getattr(update.message, 'voice', None):
+        file_id = update.message.voice.file_id
+        sent_as = 'voice'
+    elif getattr(update.message, 'audio', None):
+        file_id = update.message.audio.file_id
+        sent_as = 'audio'
     elif update.message.text:
         caption_extra = update.message.text
     tx_id = execute_db(
@@ -1391,6 +1400,9 @@ async def wallet_upload_router(update: Update, context: ContextTypes.DEFAULT_TYP
     if sent_as == 'photo' and file_id:
         await notify_admins(context.bot, photo=file_id, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
     elif sent_as == 'document' and file_id:
+        await notify_admins(context.bot, document=file_id, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
+    elif sent_as in ('video','voice','audio') and file_id:
+        # Fallback: send as document if we can't stream it directly to admins
         await notify_admins(context.bot, document=file_id, caption=caption, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
     else:
         await notify_admins(context.bot, text=f"{caption}\n\n{caption_extra}", parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
