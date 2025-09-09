@@ -1,9 +1,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-IS_FREE_BUILD = True
+IS_FREE_BUILD = False
 
-PREMIUM_NOTICE = 'این قابلیت مخصوص نسخه ویژه است. برای تهیه نسخه ویژه از طریق ربات @wingscrbot اقدام کنید.'
+PREMIUM_NOTICE = ''
 
 
 async def send_premium_notice(update: Update, context: ContextTypes.DEFAULT_TYPE, back_to: str = 'start_main') -> None:
