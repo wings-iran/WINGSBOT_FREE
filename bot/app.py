@@ -175,11 +175,12 @@ from .handlers.admin_tutorials import (
 from .handlers.admin_stats_broadcast import (
     admin_stats_menu as admin_stats_menu,
     admin_stats_refresh as admin_stats_refresh,
+    admin_broadcast_set_mode as admin_broadcast_set_mode,
 )
-from .handlers.broadcast_premium_stub import (
-    admin_broadcast_menu as premium_admin_broadcast_menu,
-    admin_broadcast_ask_message as premium_admin_broadcast_ask_message,
-    admin_broadcast_execute as premium_admin_broadcast_execute,
+from .handlers.admin_stats_broadcast import (
+    admin_broadcast_menu as admin_broadcast_menu,
+    admin_broadcast_ask_message as admin_broadcast_ask_message,
+    admin_broadcast_execute as admin_broadcast_execute,
 )
 from .handlers.admin_premium_stub import (
     backup_start as premium_backup_start,
@@ -233,7 +234,7 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_settings_manage, pattern='^admin_settings_manage$'),
                 CallbackQueryHandler(admin_stats_menu, pattern='^admin_stats$'),
                 CallbackQueryHandler(admin_messages_menu, pattern='^admin_messages_menu$'),
-                CallbackQueryHandler(premium_admin_broadcast_menu, pattern='^admin_broadcast_menu$'),
+                CallbackQueryHandler(admin_broadcast_menu, pattern='^admin_broadcast_menu$'),
                 CallbackQueryHandler(admin_send_by_id_start, pattern='^admin_send_by_id_start$'),
                 CallbackQueryHandler(admin_admins_menu, pattern='^admin_admins_menu$'),
                                 CallbackQueryHandler(admin_discount_menu, pattern='^admin_discount_menu$'),
@@ -316,6 +317,15 @@ def build_application() -> Application:
             ADMIN_STATS_MENU: [
                 CallbackQueryHandler(admin_stats_refresh, pattern='^stats_refresh$'),
                 CallbackQueryHandler(admin_command, pattern='^admin_main$'),
+            ],
+            BROADCAST_SELECT_AUDIENCE: [
+                CallbackQueryHandler(admin_broadcast_ask_message, pattern=r'^broadcast_(all|buyers)$'),
+            ],
+            BROADCAST_SELECT_MODE: [
+                CallbackQueryHandler(admin_broadcast_set_mode, pattern=r'^broadcast_mode_(copy|forward)$'),
+            ],
+            BROADCAST_AWAIT_MESSAGE: [
+                MessageHandler(filters.ALL & ~filters.COMMAND, admin_broadcast_execute),
             ],
             SETTINGS_MENU: [
                 CallbackQueryHandler(admin_settings_ask, pattern=r'^set_(trial_days|payment_text)$'),

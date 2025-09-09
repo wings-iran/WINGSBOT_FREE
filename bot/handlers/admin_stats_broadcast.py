@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 
 from ..db import query_db, execute_db
 from ..helpers.tg import safe_edit_text as _safe_edit_text
-from ..states import BROADCAST_SELECT_AUDIENCE, BROADCAST_AWAIT_MESSAGE, ADMIN_MAIN_MENU
+from ..states import BROADCAST_SELECT_AUDIENCE, BROADCAST_SELECT_MODE, BROADCAST_AWAIT_MESSAGE, ADMIN_MAIN_MENU
 from ..states import ADMIN_STATS_MENU
 
 
@@ -22,12 +22,25 @@ async def admin_broadcast_menu(update: Update, context: ContextTypes.DEFAULT_TYP
 async def admin_broadcast_ask_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     context.user_data['broadcast_audience'] = query.data.split('_')[-1]
+    keyboard = [
+        [InlineKeyboardButton("ارسال به صورت کپی", callback_data="broadcast_mode_copy")],
+        [InlineKeyboardButton("ارسال به صورت فوروارد", callback_data="broadcast_mode_forward")],
+        [InlineKeyboardButton("\U0001F519 بازگشت", callback_data="admin_main")],
+    ]
+    await _safe_edit_text(query.message, "لطفا نوع ارسال را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return BROADCAST_SELECT_MODE
+
+
+async def admin_broadcast_set_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    context.user_data['broadcast_mode'] = query.data.replace('broadcast_mode_', '')
     await _safe_edit_text(query.message, "لطفا پیام خود را برای ارسال، در قالب متن یا عکس ارسال کنید. (برای لغو /cancel را بفرستید)")
     return BROADCAST_AWAIT_MESSAGE
 
 
 async def admin_broadcast_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     audience = context.user_data.get('broadcast_audience')
+    mode = context.user_data.get('broadcast_mode', 'copy')
     if not audience:
         await update.message.reply_text("ابتدا مخاطب ارسال را انتخاب کنید.")
         return ADMIN_MAIN_MENU
@@ -40,7 +53,10 @@ async def admin_broadcast_execute(update: Update, context: ContextTypes.DEFAULT_
     for u in users or []:
         uid = u['user_id']
         try:
-            await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            if mode == 'forward':
+                await context.bot.forward_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            else:
+                await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
             sent += 1
         except Exception:
             pass
