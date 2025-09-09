@@ -32,8 +32,8 @@ from .handlers.admin import (
     admin_settings_ask,
     admin_settings_save_trial,
     admin_settings_save_payment_text,
-    # backup_start,
-    # admin_generate_backup,
+    backup_start,
+    admin_generate_backup,
     cancel_admin_conversation,
     exit_admin_panel,
     # admin_run_reminder_check,
@@ -184,8 +184,6 @@ from .handlers.admin_stats_broadcast import (
     admin_broadcast_execute as admin_broadcast_execute,
 )
 from .handlers.admin_premium_stub import (
-    backup_start as premium_backup_start,
-    admin_generate_backup as premium_admin_generate_backup,
     admin_run_reminder_check as premium_admin_run_reminder_check,
 )
 
@@ -237,10 +235,13 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_admins_menu, pattern='^admin_admins_menu$'),
                                 CallbackQueryHandler(admin_discount_menu, pattern='^admin_discount_menu$'),
                 CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
-                CallbackQueryHandler(premium_backup_start, pattern='^backup_start$'),
+                CallbackQueryHandler(backup_start, pattern='^backup_start$'),
                 CallbackQueryHandler(premium_admin_run_reminder_check, pattern=r'^admin_test_reminder$'),
                 CallbackQueryHandler(admin_tickets_menu, pattern='^admin_tickets_menu$'),
                 CallbackQueryHandler(admin_tutorials_menu, pattern='^admin_tutorials_menu$'),
+            ],
+            BACKUP_CHOOSE_PANEL: [
+                CallbackQueryHandler(admin_generate_backup, pattern=r'^backup_panel_(all|\d+)$'),
             ],
             ADMIN_MESSAGES_MENU: [
                 CallbackQueryHandler(admin_messages_select, pattern=r'^msg_select_.+'),
