@@ -105,7 +105,9 @@ def get_all_admin_ids() -> list[int]:
         rows = []
     admin_ids: list[int] = []
     try:
-        admin_ids.append(int(ADMIN_ID))
+        primary_id = int(ADMIN_ID)
+        if primary_id > 0:
+            admin_ids.append(primary_id)
     except Exception:
         pass
     for r in rows:

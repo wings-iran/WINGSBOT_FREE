@@ -1322,9 +1322,16 @@ async def reseller_upload_router(update: Update, context: ContextTypes.DEFAULT_T
 
 async def composite_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     flag = context.user_data.get('awaiting')
-    if flag == 'wallet_upload':
+    # Accept wallet uploads even if user skipped the explicit button, as long as amount/method exist
+    if flag == 'wallet_upload' or (
+        (context.user_data.get('wallet_topup_amount') and context.user_data.get('wallet_method') in ('card','crypto'))
+    ):
+        # Ensure awaiting is set so downstream logic proceeds
+        context.user_data['awaiting'] = 'wallet_upload'
         return await wallet_upload_router(update, context)
+    # Accept reseller uploads on intent/pay context too
     if flag == 'reseller_upload' or context.user_data.get('reseller_payment') or context.user_data.get('reseller_intent'):
+        context.user_data['awaiting'] = 'reseller_upload'
         return await reseller_upload_router(update, context)
     return ConversationHandler.END
 
@@ -1348,11 +1355,18 @@ async def wallet_upload_start_crypto(update: Update, context: ContextTypes.DEFAU
 
 async def wallet_upload_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if context.user_data.get('awaiting') != 'wallet_upload':
-        return ConversationHandler.END
+        # Soft-accept if user has amount+method in context
+        if not (context.user_data.get('wallet_topup_amount') and (context.user_data.get('wallet_method') in ('card','crypto'))):
+            return ConversationHandler.END
+        context.user_data['awaiting'] = 'wallet_upload'
     user_id = update.effective_user.id
     amount = context.user_data.get('wallet_topup_amount')
     method = context.user_data.get('wallet_method') or 'card'
     if not amount or method not in ('card','crypto'):
+        try:
+            await update.message.reply_text("برای ثبت شارژ، ابتدا مبلغ را انتخاب کنید و روش پرداخت را مشخص کنید.")
+        except Exception:
+            pass
         return ConversationHandler.END
     file_id = None
     sent_as = 'text'
