@@ -32,8 +32,8 @@ from .handlers.admin import (
     admin_settings_ask,
     admin_settings_save_trial,
     admin_settings_save_payment_text,
-    # backup_start,
-    # admin_generate_backup,
+    backup_start,
+    admin_generate_backup,
     cancel_admin_conversation,
     exit_admin_panel,
     # admin_run_reminder_check,
@@ -55,6 +55,7 @@ from .handlers.admin import (
     admin_toggle_pay_card, admin_toggle_pay_crypto, admin_toggle_pay_gateway, admin_toggle_gateway_type,
     admin_xui_choose_inbound,
     admin_reseller_menu, admin_toggle_reseller, admin_reseller_requests, admin_reseller_set_value_start, admin_reseller_set_value_save, admin_reseller_approve, admin_reseller_reject, admin_reseller_delete_start, admin_reseller_delete_receive,
+    admin_toggle_signup_bonus, admin_set_signup_bonus_amount_start, admin_set_signup_bonus_amount_save,
 )
 from .handlers.user import get_free_config_handler, my_services_handler, show_specific_service_details, wallet_menu, wallet_topup_gateway_start, wallet_topup_gateway_receive_amount, wallet_topup_card_start, wallet_topup_card_receive_amount, wallet_topup_card_receive_screenshot, wallet_verify_gateway, wallet_topup_crypto_start, wallet_topup_crypto_receive_amount, wallet_topup_amount_router, support_menu, ticket_create_start, ticket_receive_message, tutorials_menu, tutorial_show, referral_menu, wallet_select_amount, wallet_upload_start_card, wallet_upload_start_crypto, composite_upload_router, refresh_service_link, revoke_key, reseller_menu, reseller_pay_start, reseller_pay_card, reseller_pay_crypto, reseller_pay_gateway, reseller_verify_gateway, reseller_upload_start_card, reseller_upload_start_crypto, reseller_upload_router
 from .handlers.purchase import (
@@ -175,19 +176,15 @@ from .handlers.admin_tutorials import (
 from .handlers.admin_stats_broadcast import (
     admin_stats_menu as admin_stats_menu,
     admin_stats_refresh as admin_stats_refresh,
+    admin_broadcast_set_mode as admin_broadcast_set_mode,
 )
-from .handlers.broadcast_premium_stub import (
-    admin_broadcast_menu as premium_admin_broadcast_menu,
-    admin_broadcast_ask_message as premium_admin_broadcast_ask_message,
-    admin_broadcast_execute as premium_admin_broadcast_execute,
+from .handlers.admin_stats_broadcast import (
+    admin_broadcast_menu as admin_broadcast_menu,
+    admin_broadcast_ask_message as admin_broadcast_ask_message,
+    admin_broadcast_execute as admin_broadcast_execute,
 )
 from .handlers.admin_premium_stub import (
-    backup_start as premium_backup_start,
-    admin_generate_backup as premium_admin_generate_backup,
     admin_run_reminder_check as premium_admin_run_reminder_check,
-    admin_toggle_signup_bonus as premium_admin_toggle_signup_bonus,
-    admin_set_signup_bonus_amount_start as premium_admin_set_signup_bonus_amount_start,
-    admin_set_signup_bonus_amount_save as premium_admin_set_signup_bonus_amount_save,
 )
 
 
@@ -233,15 +230,18 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_settings_manage, pattern='^admin_settings_manage$'),
                 CallbackQueryHandler(admin_stats_menu, pattern='^admin_stats$'),
                 CallbackQueryHandler(admin_messages_menu, pattern='^admin_messages_menu$'),
-                CallbackQueryHandler(premium_admin_broadcast_menu, pattern='^admin_broadcast_menu$'),
+                CallbackQueryHandler(admin_broadcast_menu, pattern='^admin_broadcast_menu$'),
                 CallbackQueryHandler(admin_send_by_id_start, pattern='^admin_send_by_id_start$'),
                 CallbackQueryHandler(admin_admins_menu, pattern='^admin_admins_menu$'),
                                 CallbackQueryHandler(admin_discount_menu, pattern='^admin_discount_menu$'),
                 CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
-                CallbackQueryHandler(premium_backup_start, pattern='^backup_start$'),
+                CallbackQueryHandler(backup_start, pattern='^backup_start$'),
                 CallbackQueryHandler(premium_admin_run_reminder_check, pattern=r'^admin_test_reminder$'),
                 CallbackQueryHandler(admin_tickets_menu, pattern='^admin_tickets_menu$'),
                 CallbackQueryHandler(admin_tutorials_menu, pattern='^admin_tutorials_menu$'),
+            ],
+            BACKUP_CHOOSE_PANEL: [
+                CallbackQueryHandler(admin_generate_backup, pattern=r'^backup_panel_(all|\d+)$'),
             ],
             ADMIN_MESSAGES_MENU: [
                 CallbackQueryHandler(admin_messages_select, pattern=r'^msg_select_.+'),
@@ -317,6 +317,15 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_stats_refresh, pattern='^stats_refresh$'),
                 CallbackQueryHandler(admin_command, pattern='^admin_main$'),
             ],
+            BROADCAST_SELECT_AUDIENCE: [
+                CallbackQueryHandler(admin_broadcast_ask_message, pattern=r'^broadcast_(all|buyers)$'),
+            ],
+            BROADCAST_SELECT_MODE: [
+                CallbackQueryHandler(admin_broadcast_set_mode, pattern=r'^broadcast_mode_(copy|forward)$'),
+            ],
+            BROADCAST_AWAIT_MESSAGE: [
+                MessageHandler(filters.ALL & ~filters.COMMAND, admin_broadcast_execute),
+            ],
             SETTINGS_MENU: [
                 CallbackQueryHandler(admin_settings_ask, pattern=r'^set_(trial_days|payment_text)$'),
                 CallbackQueryHandler(admin_toggle_trial_status, pattern=r'^set_trial_status_(0|1)$'),
@@ -331,8 +340,8 @@ def build_application() -> Application:
                 CallbackQueryHandler(admin_toggle_pay_gateway, pattern=r'^toggle_pay_gateway_(0|1)$'),
                 CallbackQueryHandler(admin_toggle_gateway_type, pattern=r'^toggle_gateway_type_(zarinpal|aghapay)$'),
                 CallbackQueryHandler(admin_set_trial_inbound_choose, pattern=r'^set_trial_inbound_\d+$'),
-                CallbackQueryHandler(premium_admin_toggle_signup_bonus, pattern=r'^toggle_signup_bonus_(0|1)$'),
-                CallbackQueryHandler(premium_admin_set_signup_bonus_amount_start, pattern='^set_signup_bonus_amount$'),
+                CallbackQueryHandler(admin_toggle_signup_bonus, pattern=r'^toggle_signup_bonus_(0|1)$'),
+                CallbackQueryHandler(admin_set_signup_bonus_amount_start, pattern='^set_signup_bonus_amount$'),
                 CallbackQueryHandler(admin_set_gateway_api_start, pattern='^set_gateway_api_start$'),
                 CallbackQueryHandler(admin_command, pattern='^admin_main$'),
                 # Reseller settings
@@ -371,7 +380,7 @@ def build_application() -> Application:
             SETTINGS_AWAIT_TRIAL_DAYS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_settings_save_trial)],
             SETTINGS_AWAIT_PAYMENT_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_settings_save_payment_text)],
             SETTINGS_AWAIT_USD_RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_usd_rate_save)],
-            SETTINGS_AWAIT_SIGNUP_BONUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, premium_admin_set_signup_bonus_amount_save)],
+            SETTINGS_AWAIT_SIGNUP_BONUS: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_signup_bonus_amount_save)],
             SETTINGS_AWAIT_GATEWAY_API: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_set_gateway_api_save)],
             ADMIN_RESELLER_AWAIT_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reseller_set_value_save)],
         },
@@ -475,8 +484,8 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(admin_toggle_pay_crypto, pattern=r'^toggle_pay_crypto_(0|1)$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_toggle_pay_gateway, pattern=r'^toggle_pay_gateway_(0|1)$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_toggle_gateway_type, pattern=r'^toggle_gateway_type_(zarinpal|aghapay)$'), group=3)
-    application.add_handler(CallbackQueryHandler(premium_admin_toggle_signup_bonus, pattern=r'^toggle_signup_bonus_(0|1)$'), group=3)
-    application.add_handler(CallbackQueryHandler(premium_admin_set_signup_bonus_amount_start, pattern='^set_signup_bonus_amount$'), group=3)
+    application.add_handler(CallbackQueryHandler(admin_toggle_signup_bonus, pattern=r'^toggle_signup_bonus_(0|1)$'), group=3)
+    application.add_handler(CallbackQueryHandler(admin_set_signup_bonus_amount_start, pattern='^set_signup_bonus_amount$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_set_trial_panel_start, pattern='^set_trial_panel_start$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_set_trial_panel_choose, pattern=r'^set_trial_panel_\d+$'), group=3)
     application.add_handler(CallbackQueryHandler(admin_set_ref_percent_start, pattern='^set_ref_percent_start$'), group=3)

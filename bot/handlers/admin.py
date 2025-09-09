@@ -2482,6 +2482,84 @@ async def admin_generate_backup(update: Update, context: ContextTypes.DEFAULT_TY
             except Exception as e:
                 logger.error(f"Error adding panel {panel_id} to backup ZIP: {e}")
 
+        # Bot-wide snapshots: members, services, wallets, plans, panels, stats, admins
+        try:
+            users_tbl = query_db("SELECT user_id, first_name, join_date, referrer_id FROM users ORDER BY user_id") or []
+            zf.writestr("users.json", _json.dumps(users_tbl, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add users.json: {e}")
+
+        try:
+            orders_tbl = query_db(
+                "SELECT id, user_id, plan_id, status, marzban_username, timestamp, final_price, panel_id, panel_type, last_link, is_trial FROM orders ORDER BY id"
+            ) or []
+            zf.writestr("services.json", _json.dumps(orders_tbl, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add services.json: {e}")
+
+        try:
+            wallets_tbl = query_db("SELECT user_id, balance FROM user_wallets ORDER BY user_id") or []
+            zf.writestr("wallet_balances.json", _json.dumps(wallets_tbl, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add wallet_balances.json: {e}")
+
+        try:
+            plans_tbl = query_db("SELECT id, name, description, price, duration_days, traffic_gb FROM plans ORDER BY id") or []
+            zf.writestr("plans.json", _json.dumps(plans_tbl, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add plans.json: {e}")
+
+        try:
+            panels_tbl = query_db("SELECT id, name, panel_type, url, sub_base FROM panels ORDER BY id") or []
+            zf.writestr("panels.json", _json.dumps(panels_tbl, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add panels.json: {e}")
+
+        try:
+            total_users = (query_db("SELECT COUNT(*) AS c FROM users", one=True) or {}).get('c', 0)
+            buyers = (query_db("SELECT COUNT(DISTINCT user_id) AS c FROM orders WHERE status='approved'", one=True) or {}).get('c', 0)
+            daily_rev = (query_db(
+                """
+                SELECT COALESCE(SUM(CASE WHEN o.final_price IS NOT NULL THEN o.final_price ELSE p.price END),0) AS rev
+                FROM orders o
+                JOIN plans p ON p.id = o.plan_id
+                WHERE o.status='approved' AND date(o.timestamp) = date('now','localtime')
+                """,
+                one=True,
+            ) or {}).get('rev', 0)
+            monthly_rev = (query_db(
+                """
+                SELECT COALESCE(SUM(CASE WHEN o.final_price IS NOT NULL THEN o.final_price ELSE p.price END),0) AS rev
+                FROM orders o
+                JOIN plans p ON p.id = o.plan_id
+                WHERE o.status='approved' AND strftime('%Y-%m', o.timestamp) = strftime('%Y-%m', 'now','localtime')
+                """,
+                one=True,
+            ) or {}).get('rev', 0)
+            total_orders = (query_db("SELECT COUNT(*) AS c FROM orders", one=True) or {}).get('c', 0)
+            approved_orders = (query_db("SELECT COUNT(*) AS c FROM orders WHERE status='approved'", one=True) or {}).get('c', 0)
+            stats_obj = {
+                'total_users': int(total_users or 0),
+                'buyers': int(buyers or 0),
+                'daily_revenue_toman': int(daily_rev or 0),
+                'monthly_revenue_toman': int(monthly_rev or 0),
+                'total_orders': int(total_orders or 0),
+                'approved_orders': int(approved_orders or 0),
+            }
+            zf.writestr("stats.json", _json.dumps(stats_obj, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add stats.json: {e}")
+
+        try:
+            add_admins = [row['user_id'] for row in (query_db("SELECT user_id FROM admins ORDER BY user_id") or [])]
+            admins_obj = {
+                'primary_admin_id': ADMIN_ID,
+                'additional_admin_ids': add_admins,
+            }
+            zf.writestr("admins.json", _json.dumps(admins_obj, ensure_ascii=False, indent=2))
+        except Exception as e:
+            logger.error(f"Could not add admins.json: {e}")
+
     zip_buffer.seek(0)
     filename = f"panel_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     file_to_send = InputFile(zip_buffer, filename=filename)
