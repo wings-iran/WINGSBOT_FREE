@@ -157,12 +157,12 @@ async def get_free_config_handler(update: Update, context: ContextTypes.DEFAULT_
             xui_inb = None
         if xui_inb is not None:
             execute_db(
-                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, xui_inbound_id, panel_type) VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?))",
+                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, xui_inbound_id, panel_type, is_trial) VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?), 1)",
                 (user_id, plan_id, first_panel['id'], 'approved', marzban_username, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), xui_inb, first_panel['id']),
             )
         else:
             execute_db(
-                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, panel_type) VALUES (?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?))",
+                "INSERT INTO orders (user_id, plan_id, panel_id, status, marzban_username, timestamp, panel_type, is_trial) VALUES (?, ?, ?, ?, ?, ?, (SELECT panel_type FROM panels WHERE id=?), 1)",
                 (user_id, plan_id, first_panel['id'], 'approved', marzban_username, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), first_panel['id']),
             )
         execute_db("INSERT INTO free_trials (user_id, timestamp) VALUES (?, ?)", (user_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -256,7 +256,7 @@ async def my_services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = query.from_user.id
 
     orders = query_db(
-        "SELECT id, marzban_username, plan_id FROM orders WHERE user_id = ? AND status = 'approved' AND marzban_username IS NOT NULL ORDER BY id DESC",
+        "SELECT id, marzban_username, plan_id, COALESCE(is_trial, 0) AS is_trial FROM orders WHERE user_id = ? AND status = 'approved' AND marzban_username IS NOT NULL ORDER BY id DESC",
         (user_id,),
     )
 
@@ -274,7 +274,10 @@ async def my_services_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     for order in orders:
         plan = query_db("SELECT name FROM plans WHERE id = ?", (order['plan_id'],), one=True)
-        plan_name = plan['name'] if plan else "سرویس تست/ویژه"
+        if int(order.get('is_trial') or 0) == 1:
+            plan_name = "سرویس تست"
+        else:
+            plan_name = plan['name'] if plan else "سرویس ویژه"
         button_text = f"{plan_name} ({order['marzban_username']})"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"view_service_{order['id']}")])
 
