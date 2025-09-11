@@ -270,12 +270,23 @@ def build_application() -> Application:
             ADMIN_BUTTON_ADD_AWAIT_COL: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_button_add_save)],
             ADMIN_MESSAGES_ADD_AWAIT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, msg_add_receive_name)],
             ADMIN_MESSAGES_ADD_AWAIT_CONTENT: [MessageHandler(filters.ALL & ~filters.COMMAND, msg_add_receive_content)],
+            # Discount Codes Management
+            DISCOUNT_MENU: [
+                CallbackQueryHandler(admin_discount_add_start, pattern='^add_discount_code$'),
+                CallbackQueryHandler(admin_discount_delete, pattern=r'^delete_discount_\d+$'),
+                CallbackQueryHandler(admin_discount_menu, pattern='^admin_discount_menu$'),
+                CallbackQueryHandler(admin_command, pattern='^admin_main$'),
+            ],
+            DISCOUNT_AWAIT_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_code)],
+            DISCOUNT_AWAIT_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_percent)],
+            DISCOUNT_AWAIT_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_receive_limit)],
+            DISCOUNT_AWAIT_EXPIRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_discount_save)],
             # Panels Management
             ADMIN_PANELS_MENU: [
                 CallbackQueryHandler(admin_panel_inbounds_menu, pattern=r'^panel_inbounds_\d+$'),
                 CallbackQueryHandler(admin_panel_delete, pattern=r'^panel_delete_\d+$'),
-                CallbackQueryHandler(admin_panel_add_start, pattern=r'^panel_add_start$'),
-                CallbackQueryHandler(admin_panels_menu, pattern=r'^admin_panels_menu$'),
+                CallbackQueryHandler(admin_panel_add_start, pattern='^panel_add_start$'),
+                CallbackQueryHandler(admin_panels_menu, pattern='^admin_panels_menu$'),
                 CallbackQueryHandler(admin_command, pattern='^admin_main$'),
             ],
             ADMIN_PANEL_AWAIT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_panel_receive_name)],
@@ -590,6 +601,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(wallet_menu, pattern=r'^wallet_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(support_menu, pattern=r'^support_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(tutorials_menu, pattern=r'^tutorials_menu$'), group=3)
+    application.add_handler(CallbackQueryHandler(tutorial_show, pattern=r'^tutorial_show_\d+$'), group=3)
     application.add_handler(CallbackQueryHandler(referral_menu, pattern=r'^referral_menu$'), group=3)
     application.add_handler(CallbackQueryHandler(reseller_menu, pattern=r'^reseller_menu$'), group=3)
 
