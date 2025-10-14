@@ -177,12 +177,34 @@ async def admin_panel_receive_pass(update: Update, context: ContextTypes.DEFAULT
     # Use the main PanelAPI to connect, but we need to select the correct class
     # based on panel_type. The factory function is not available here, so we do it manually.
     ptype = panel_data['type'].lower()
+    # For X-UI-like panels, we support direct inbound discovery
     if ptype in ('xui', 'x-ui', 'alireza', 'sanaei'):
         from ..panel import XuiAPI as PanelAPIType
     elif ptype in ('3xui', '3x-ui'):
         from ..panel import ThreeXuiAPI as PanelAPIType
     elif ptype in ('txui', 'tx-ui', 'tx ui'):
         from ..panel import TxUiAPI as PanelAPIType
+    elif ptype in ('marzban', 'marzneshin'):
+        # For Marzban/Marzneshin, do not attempt direct inbound listing here.
+        # Save panel directly and let auto-discovery/refresh happen in the panels menu.
+        panel_id = execute_db(
+            "INSERT INTO panels (name, panel_type, url, sub_base, token, username, password) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                panel_data['name'],
+                panel_data['type'],
+                panel_data['url'],
+                panel_data.get('sub_base') or '',
+                panel_data.get('token') or '',
+                panel_data.get('user'),
+                panel_data.get('pass')
+            )
+        )
+        if panel_id:
+            await update.message.reply_text("✅ پنل Marzban با موفقیت ذخیره شد. از منوی پنل‌ها، گزینه بروزرسانی اینباندها را بزنید تا به‌صورت خودکار کشف شوند.")
+        else:
+            await update.message.reply_text("❌ خطا در ذخیره پنل در دیتابیس.")
+        context.user_data.clear()
+        return ConversationHandler.END
     else:
         # Fallback or error for unsupported types
         await update.message.reply_text(f"نوع پنل {ptype} برای اتصال مستقیم پشتیبانی نمی‌شود.")
@@ -209,7 +231,7 @@ async def admin_panel_receive_pass(update: Update, context: ContextTypes.DEFAULT
         inbound_name = inbound.get('remark') or f"{inbound.get('protocol', '')}:{inbound.get('port', '')}"
         text += f"- {inbound_name}\n"
         keyboard.append([InlineKeyboardButton(inbound_name, callback_data=f"panel_inbound_{inbound['id']}")])
-
+    
     keyboard.append([InlineKeyboardButton("انصراف", callback_data="cancel")])
     await connecting_message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     

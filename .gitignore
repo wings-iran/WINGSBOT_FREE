@@ -125,3 +125,7 @@ cython_debug/
 bot.db
 *.sqlite3
 *.db-journal
+
+# Local DB artifacts
+bot.db
+bot.db.bak*
