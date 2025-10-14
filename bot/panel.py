@@ -3856,6 +3856,9 @@ def VpnPanelAPI(panel_id: int) -> BasePanelAPI:
     ptype = (panel_row.get('panel_type') or 'marzban').lower()
     if ptype == 'marzban':
         return MarzbanAPI(panel_row)
+    if ptype in ('pasarguard', 'pasar', 'pg'):
+        # Temporarily treat PasarGuard similar to Marzban for basic flows
+        return MarzbanAPI(panel_row)
     if ptype == 'marzneshin':
         return MarzneshinAPI(panel_row)
     if ptype in ('xui', 'x-ui', 'sanaei', 'alireza'):

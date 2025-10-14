@@ -85,6 +85,7 @@ async def admin_panel_receive_name(update: Update, context: ContextTypes.DEFAULT
     context.user_data['new_panel']['name'] = update.message.text
     keyboard = [
         [InlineKeyboardButton("Marzban", callback_data="panel_type_marzban")],
+        [InlineKeyboardButton("PasarGuard", callback_data="panel_type_pasarguard")],
         [InlineKeyboardButton("Alireza (X-UI)", callback_data="panel_type_xui")],
         [InlineKeyboardButton("3x-UI", callback_data="panel_type_3xui")],
         [InlineKeyboardButton("TX-UI", callback_data="panel_type_txui")],
@@ -99,6 +100,7 @@ async def admin_panel_receive_type(update: Update, context: ContextTypes.DEFAULT
     p_type = query.data.replace("panel_type_", "").lower()
     mapping = {
         'marzban': 'marzban',
+        'pasarguard': 'pasarguard',
         'xui': 'xui',
         '3xui': '3xui',
         'txui': 'txui',
@@ -184,7 +186,7 @@ async def admin_panel_receive_pass(update: Update, context: ContextTypes.DEFAULT
         from ..panel import ThreeXuiAPI as PanelAPIType
     elif ptype in ('txui', 'tx-ui', 'tx ui'):
         from ..panel import TxUiAPI as PanelAPIType
-    elif ptype in ('marzban', 'marzneshin'):
+    elif ptype in ('marzban', 'marzneshin', 'pasarguard'):
         # For Marzban/Marzneshin, do not attempt direct inbound listing here.
         # Save panel directly and let auto-discovery/refresh happen in the panels menu.
         panel_id = execute_db(
@@ -200,7 +202,8 @@ async def admin_panel_receive_pass(update: Update, context: ContextTypes.DEFAULT
             )
         )
         if panel_id:
-            await update.message.reply_text("✅ پنل Marzban با موفقیت ذخیره شد. از منوی پنل‌ها، گزینه بروزرسانی اینباندها را بزنید تا به‌صورت خودکار کشف شوند.")
+            label = 'PasarGuard' if ptype == 'pasarguard' else 'Marzban'
+            await update.message.reply_text(f"✅ پنل {label} با موفقیت ذخیره شد. از منوی پنل‌ها، گزینه بروزرسانی اینباندها را بزنید تا به‌صورت خودکار کشف شوند.")
         else:
             await update.message.reply_text("❌ خطا در ذخیره پنل در دیتابیس.")
         context.user_data.clear()
